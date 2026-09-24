@@ -1,5 +1,5 @@
 import {createMMKV} from 'react-native-mmkv';
-import type {AppSnapshot} from '../../domain/types';
+import type {AppSnapshot, SuggestionKind} from '../../domain/types';
 import {createEmptySnapshot} from './seed';
 import {todayISO} from '../../utils/dates';
 
@@ -29,6 +29,29 @@ function resetDailySpins(snapshot: AppSnapshot): AppSnapshot {
   return {...snapshot, lastSpinDate: today, spinsLeft: 3};
 }
 
+function normalizeSnapshot(snapshot: AppSnapshot): AppSnapshot {
+  const members = snapshot.members ?? [];
+  const ownerId =
+    snapshot.household.ownerId || members.find(member => member.permission === 'editor')?.id || members[0]?.id || '';
+  return {
+    ...snapshot,
+    household: {
+      ...snapshot.household,
+      plan: snapshot.household.plan ?? (members.length > 1 ? 'family' : 'solo'),
+      calendarSpan: snapshot.household.calendarSpan ?? 'week',
+      ownerId,
+    },
+    account: snapshot.account ?? null,
+    signedIn: snapshot.signedIn ?? snapshot.onboardingComplete,
+    photoStepComplete: snapshot.photoStepComplete ?? snapshot.onboardingComplete,
+    planChosen: snapshot.planChosen ?? snapshot.onboardingComplete,
+    suggestions: (snapshot.suggestions ?? []).map(item => ({
+      ...item,
+      kind: (item.kind ?? 'dish') as SuggestionKind,
+    })),
+  };
+}
+
 export function loadSnapshot(): AppSnapshot {
   if (memory) {
     return memory;
@@ -37,7 +60,7 @@ export function loadSnapshot(): AppSnapshot {
   const raw = store?.getString(STORAGE_KEY);
   if (raw) {
     try {
-      memory = resetDailySpins(JSON.parse(raw) as AppSnapshot);
+      memory = resetDailySpins(normalizeSnapshot(JSON.parse(raw) as AppSnapshot));
       persistSnapshot(memory);
       return memory;
     } catch {

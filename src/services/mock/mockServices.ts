@@ -2,6 +2,7 @@ import type {
   ChefNote,
   GroceryItem,
   Household,
+  PantryItem,
   MealSlot,
   MealType,
   Member,
@@ -9,10 +10,12 @@ import type {
   Recipe,
   Suggestion,
   YouTubeMeta,
+  AppSnapshot,
 } from '../../domain/types';
+import {PLAN_SEATS} from '../../domain/types';
 import type {WeeklyThemeId} from '../../theme/weeklyThemes';
 import {createId} from '../../utils/ids';
-import {addDaysISO, todayISO} from '../../utils/dates';
+import {addDaysISO, monthDates, todayISO} from '../../utils/dates';
 import {
   extractYouTubeId,
   isYouTubeUrl,
@@ -42,13 +45,11 @@ function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'household';
 }
 
-function memberDefaults(name: string, index: number): Pick<Member, 'avatarInitial' | 'avatarColor' | 'displayName' | 'emoji'> {
-  const emojis = ['👩', '🧔', '👦', '👧'];
+function memberDefaults(name: string, index: number): Pick<Member, 'avatarInitial' | 'avatarColor' | 'displayName'> {
   return {
     avatarInitial: name.trim().charAt(0).toUpperCase() || 'F',
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
     displayName: name,
-    emoji: emojis[index % emojis.length],
   };
 }
 
@@ -57,7 +58,7 @@ const householdService: HouseholdService = {
     await simulateLatency(180, 420);
     return loadSnapshot();
   },
-  async completeOnboarding({householdName, members, theme, useDemo}) {
+  async completeOnboarding({householdName, members, theme, plan = 'family', useDemo}) {
     await simulateLatency();
     if (useDemo) {
       return replaceSnapshot(createDemoSnapshot());
@@ -74,9 +75,12 @@ const householdService: HouseholdService = {
       photoUrl: undefined,
       ...memberDefaults(member.name, index),
     }));
-    const snapshot = {
+    const snapshot: AppSnapshot = {
       ...empty,
       onboardingComplete: true,
+      signedIn: true,
+      planChosen: true,
+      account: empty.account,
       household: {
         ...empty.household,
         id: createId('hh'),
@@ -84,6 +88,9 @@ const householdService: HouseholdService = {
         slug: slugify(householdName || 'our-feast'),
         inviteCode: `${(householdName || 'FEAST').slice(0, 6).toUpperCase()}-${Math.floor(10 + Math.random() * 89)}`,
         theme,
+        plan,
+        calendarSpan: 'week',
+        ownerId: created[0]?.id ?? '',
         houseRule: created.length ? `${created[0].name} leads the week` : '',
       },
       members: created,
@@ -100,7 +107,7 @@ const householdService: HouseholdService = {
     await simulateLatency(160, 320);
     return updateSnapshot(current => ({
       ...current,
-      household: {...current.household, ...patch},
+      household: {...current.household, ...patch, ownerId: current.household.ownerId},
       plan: patch.theme ? {...current.plan, theme: patch.theme} : current.plan,
     })).household;
   },
@@ -111,6 +118,14 @@ const householdService: HouseholdService = {
   async addMember(input) {
     await simulateLatency();
     const snapshot = loadSnapshot();
+    const seats = PLAN_SEATS[snapshot.household.plan] ?? 1;
+    if (snapshot.members.length >= seats) {
+      throw new Error(
+        snapshot.household.plan === 'family'
+          ? 'The family plan includes up to 4 people.'
+          : 'The $5 plan is for one person. Switch to Family to invite others.',
+      );
+    }
     const member: Member = {
       id: createId('mem'),
       helper: input.helper,
@@ -129,10 +144,14 @@ const householdService: HouseholdService = {
   },
   async updateMember(id, patch) {
     await simulateLatency();
-    const snapshot = updateSnapshot(current => ({
-      ...current,
-      members: current.members.map(member => (member.id === id ? {...member, ...patch} : member)),
-    }));
+    const snapshot = updateSnapshot(current => {
+      const isAdmin = current.household.ownerId === id;
+      const nextPatch = isAdmin ? {...patch, permission: current.members.find(member => member.id === id)?.permission} : patch;
+      return {
+        ...current,
+        members: current.members.map(member => (member.id === id ? {...member, ...nextPatch} : member)),
+      };
+    });
     const member = snapshot.members.find(item => item.id === id);
     if (!member) {
       throw new Error('Family member not found.');
@@ -170,9 +189,112 @@ const householdService: HouseholdService = {
     const snapshot = loadSnapshot();
     return snapshot.members.find(member => member.id === snapshot.currentMemberId)?.permission ?? 'viewer';
   },
+  async signUp({name, email, password, photoUri}) {
+    await simulateLatency(160, 280);
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!name.trim() || !trimmedEmail.includes('@') || password.length < 6) {
+      throw new Error('Add your name, a valid email, and a password of at least 6 characters.');
+    }
+    const existing = loadSnapshot().account;
+    if (existing && existing.email === trimmedEmail) {
+      throw new Error('That email already has an account. Sign in instead.');
+    }
+    const fresh = createEmptySnapshot();
+    return replaceSnapshot({
+      ...fresh,
+      account: {name: name.trim(), email: trimmedEmail, password, photoUri},
+      signedIn: true,
+      photoStepComplete: false,
+      planChosen: false,
+      onboardingComplete: false,
+    });
+  },
+  async signIn({email, password}) {
+    await simulateLatency(160, 280);
+    const snapshot = loadSnapshot();
+    const account = snapshot.account;
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!account || account.email !== trimmedEmail || account.password !== password) {
+      throw new Error('Email or password doesn’t match.');
+    }
+    return updateSnapshot(current => ({...current, signedIn: true}));
+  },
+  async choosePlan(plan) {
+    await simulateLatency(120, 220);
+    const snapshot = loadSnapshot();
+    if (!snapshot.signedIn) {
+      throw new Error('Create an account first.');
+    }
+    return updateSnapshot(current => ({
+      ...current,
+      planChosen: true,
+      household: {...current.household, plan},
+    }));
+  },
+  async reopenPaywall() {
+    await simulateLatency(80, 140);
+    return updateSnapshot(current => ({...current, planChosen: false}));
+  },
+  async createHousehold({householdName, memberName, role}) {
+    await simulateLatency();
+    const current = loadSnapshot();
+    if (!current.signedIn || !current.planChosen) {
+      throw new Error('Choose a plan before creating the household.');
+    }
+    const name = householdName.trim();
+    const person = memberName.trim() || current.account?.name || 'Chef';
+    if (!name) {
+      throw new Error('Name your household.');
+    }
+    const owner = {
+      id: createId('mem'),
+      name: person,
+      role,
+      permission: 'editor' as const,
+      specialty: 'Weeknight dinners',
+      badge: role,
+      helper: false,
+      photoUrl: current.account?.photoUri,
+      ...memberDefaults(person, 0),
+    };
+    return updateSnapshot(snapshot => ({
+      ...snapshot,
+      onboardingComplete: true,
+      members: [owner],
+      currentMemberId: owner.id,
+      household: {
+        ...snapshot.household,
+        id: createId('hh'),
+        name,
+        slug: slugify(name),
+        inviteCode: `${name.slice(0, 6).toUpperCase()}-${Math.floor(10 + Math.random() * 89)}`,
+        ownerId: owner.id,
+        houseRule: `${person} leads the week`,
+      },
+    }));
+  },
+  async setAccountPhoto(photoUri) {
+    await simulateLatency(80, 160);
+    const snapshot = loadSnapshot();
+    if (!snapshot.account) {
+      throw new Error('Create an account before adding a photo.');
+    }
+    return updateSnapshot(current => ({
+      ...current,
+      photoStepComplete: true,
+      account: current.account ? {...current.account, photoUri} : current.account,
+      members: current.members.map(member =>
+        member.id === current.household.ownerId ? {...member, photoUrl: photoUri} : member,
+      ),
+    }));
+  },
+  async skipPhotoStep() {
+    await simulateLatency(40, 80);
+    return updateSnapshot(current => ({...current, photoStepComplete: true}));
+  },
   async signOut() {
     await simulateLatency(160, 280);
-    replaceSnapshot(createEmptySnapshot());
+    updateSnapshot(current => ({...current, signedIn: false}));
   },
 };
 
@@ -180,6 +302,44 @@ function requireEditor() {
   if (householdService.currentPermission() !== 'editor') {
     throw new Error('Only an editor chef can change the household plan.');
   }
+}
+
+function requireOwner() {
+  const snapshot = loadSnapshot();
+  if (!snapshot.household.ownerId || snapshot.currentMemberId !== snapshot.household.ownerId) {
+    throw new Error('Only the household owner can accept or decline this.');
+  }
+}
+
+function consumeIngredients(current: ReturnType<typeof loadSnapshot>, recipe: Recipe) {
+  const pantry = current.pantry.map(item => ({...item}));
+  const grocery = [...current.grocery];
+  recipe.ingredients.forEach(ingredient => {
+    const key = ingredient.name.toLowerCase();
+    const stock = pantry.find(item => {
+      const name = item.name.toLowerCase();
+      return name.includes(key) || key.includes(name);
+    });
+    if (stock) {
+      stock.lowStock = true;
+      stock.percentLeft = Math.max(0, (stock.percentLeft ?? 40) - 35);
+      stock.statusLabel = 'Used for tonight';
+    }
+    const listed = grocery.some(item => item.name.toLowerCase() === key && !item.pending && !item.checked);
+    if (!listed) {
+      grocery.unshift({
+        id: createId('gro'),
+        name: ingredient.name,
+        aisle: ingredient.location === 'fridge' ? 'Produce' : 'Dry Goods',
+        category: ingredient.location === 'fridge' ? 'produce' : 'aisle',
+        quantity: `${ingredient.quantity} ${ingredient.unit}`,
+        checked: false,
+        fromRecipeId: recipe.id,
+        recipeLabel: recipe.title,
+      });
+    }
+  });
+  return {pantry, grocery};
 }
 
 const mealPlanService: MealPlanService = {
@@ -191,13 +351,18 @@ const mealPlanService: MealPlanService = {
   async updateSlot(slotId, patch) {
     requireEditor();
     await simulateLatency();
-    return updateSnapshot(current => ({
-      ...current,
-      plan: {
-        ...current.plan,
-        slots: current.plan.slots.map(slot => (slot.id === slotId ? {...slot, ...patch} : slot)),
-      },
-    })).plan;
+    return updateSnapshot(current => {
+      const slots = current.plan.slots.map(slot => (slot.id === slotId ? {...slot, ...patch} : slot));
+      const served = patch.status === 'served' ? slots.find(slot => slot.id === slotId) : undefined;
+      const recipe = served?.recipeId ? current.recipes.find(item => item.id === served.recipeId) : undefined;
+      const refreshed = recipe ? consumeIngredients(current, recipe) : null;
+      return {
+        ...current,
+        grocery: refreshed?.grocery ?? current.grocery,
+        pantry: refreshed?.pantry ?? current.pantry,
+        plan: {...current.plan, slots},
+      };
+    }).plan;
   },
   async assignChef(date, chefId) {
     requireEditor();
@@ -299,6 +464,50 @@ const mealPlanService: MealPlanService = {
         ),
       },
     })).plan;
+  },
+  async setOccasion(date, occasion) {
+    requireEditor();
+    await simulateLatency(80, 180);
+    return updateSnapshot(current => ({
+      ...current,
+      plan: {
+        ...current.plan,
+        slots: current.plan.slots.map(slot =>
+          slot.date === date && slot.mealType === 'dinner' ? {...slot, occasion} : slot,
+        ),
+      },
+    })).plan;
+  },
+  async setCalendarSpan(span) {
+    requireEditor();
+    await simulateLatency(80, 160);
+    return updateSnapshot(current => {
+      if (span === 'week') {
+        return {...current, household: {...current.household, calendarSpan: span}};
+      }
+      const existing = new Set(current.plan.slots.map(slot => `${slot.date}_${slot.mealType}`));
+      const extra: MealSlot[] = [];
+      monthDates(current.plan.startDate).forEach(date => {
+        (['breakfast', 'lunch', 'dinner'] as const).forEach(mealType => {
+          if (!existing.has(`${date}_${mealType}`)) {
+            extra.push({id: `slot_${date}_${mealType}`, date, mealType, status: 'planned'});
+          }
+        });
+      });
+      const slots = [...current.plan.slots, ...extra].sort(
+        (a, b) => a.date.localeCompare(b.date) || a.mealType.localeCompare(b.mealType),
+      );
+      return {
+        ...current,
+        household: {...current.household, calendarSpan: span},
+        plan: {
+          ...current.plan,
+          startDate: slots[0]?.date ?? current.plan.startDate,
+          endDate: slots[slots.length - 1]?.date ?? current.plan.endDate,
+          slots,
+        },
+      };
+    }).plan;
   },
   async togglePrepTask(taskId) {
     await simulateLatency(80, 160);
@@ -453,7 +662,7 @@ const suggestionService: SuggestionService = {
     await simulateLatency();
     return loadSnapshot().suggestions;
   },
-  async submit({title, youtubeUrl, note}) {
+  async submit({title, youtubeUrl, note, kind = 'dish', targetDate, occasion}) {
     await simulateLatency();
     const trimmed = title.trim();
     if (!trimmed) {
@@ -469,7 +678,7 @@ const suggestionService: SuggestionService = {
     const plannedTitles = snapshot.plan.slots
       .map(slot => snapshot.recipes.find(recipe => recipe.id === slot.recipeId)?.title.toLowerCase())
       .filter(Boolean);
-    if (plannedTitles.includes(trimmed.toLowerCase())) {
+    if (kind === 'dish' && plannedTitles.includes(trimmed.toLowerCase())) {
       throw new Error('That meal is already on this week’s plan.');
     }
     const match = snapshot.recipes.find(recipe => recipe.title.toLowerCase() === trimmed.toLowerCase());
@@ -484,6 +693,9 @@ const suggestionService: SuggestionService = {
       upVoterIds: snapshot.currentMemberId ? [snapshot.currentMemberId] : [],
       downVoterIds: [],
       status: 'open',
+      kind,
+      targetDate,
+      occasion,
       createdAt: new Date().toISOString(),
     };
     updateSnapshot(current => ({...current, suggestions: [suggestion, ...current.suggestions]}));
@@ -515,7 +727,7 @@ const suggestionService: SuggestionService = {
     return suggestion;
   },
   async decide(id, status) {
-    requireEditor();
+    requireOwner();
     await simulateLatency();
     const snapshot = updateSnapshot(current => {
       const target = current.suggestions.find(item => item.id === id);
@@ -523,7 +735,17 @@ const suggestionService: SuggestionService = {
         return current;
       }
       let slots = current.plan.slots;
-      if (status === 'accepted' && target.recipeId) {
+      if (status === 'accepted' && target.kind === 'plan' && target.targetDate) {
+        slots = slots.map(slot => {
+          if (slot.date !== target.targetDate || slot.mealType !== 'dinner') {
+            return slot;
+          }
+          if (target.occasion) {
+            return {...slot, occasion: target.occasion};
+          }
+          return {...slot, status: 'eatingOut' as const, eatingOutNote: target.note ?? target.title, recipeId: undefined};
+        });
+      } else if (status === 'accepted' && target.recipeId) {
         const openDinner = slots.find(slot => slot.mealType === 'dinner' && (!slot.recipeId || slot.status === 'eatingOut'));
         const friday = slots.find(slot => slot.mealType === 'dinner' && slot.date === current.plan.slots.filter(s => s.mealType === 'dinner')[4]?.date);
         const dest = target.targetDate
@@ -558,6 +780,8 @@ const groceryService: GroceryService = {
   },
   async addGrocery(name, meta) {
     await simulateLatency(100, 220);
+    const snapshot = loadSnapshot();
+    const isOwner = snapshot.currentMemberId === snapshot.household.ownerId;
     const item: GroceryItem = {
       id: createId('gro'),
       name,
@@ -565,14 +789,50 @@ const groceryService: GroceryService = {
       category: meta?.category ?? 'other',
       quantity: meta?.quantity ?? '',
       checked: false,
-      requestedBy: loadSnapshot().currentMemberId,
+      requestedBy: snapshot.currentMemberId,
       ...meta,
+      pending: meta?.pending ?? !isOwner,
     };
     updateSnapshot(current => ({...current, grocery: [item, ...current.grocery]}));
     return item;
   },
+  async updateGrocery(id, patch) {
+    await simulateLatency(80, 160);
+    const name = patch.name.trim();
+    if (!name) {
+      throw new Error('Item name is required.');
+    }
+    const snapshot = updateSnapshot(current => ({
+      ...current,
+      grocery: current.grocery.map(item =>
+        item.id === id ? {...item, name, quantity: patch.quantity?.trim() ?? ''} : item,
+      ),
+    }));
+    const item = snapshot.grocery.find(value => value.id === id);
+    if (!item) {
+      throw new Error('Grocery item not found.');
+    }
+    return item;
+  },
+  async removeGrocery(id) {
+    await simulateLatency(80, 160);
+    updateSnapshot(current => ({
+      ...current,
+      grocery: current.grocery.filter(item => item.id !== id),
+    }));
+  },
+  async decideGrocery(id, status) {
+    requireOwner();
+    await simulateLatency(80, 160);
+    return updateSnapshot(current => ({
+      ...current,
+      grocery:
+        status === 'rejected'
+          ? current.grocery.filter(item => item.id !== id)
+          : current.grocery.map(item => (item.id === id ? {...item, pending: false} : item)),
+    })).grocery;
+  },
   async toggleGrocery(id) {
-    await simulateLatency(60, 140);
     const snapshot = updateSnapshot(current => ({
       ...current,
       grocery: current.grocery.map(item => (item.id === id ? {...item, checked: !item.checked} : item)),
@@ -613,6 +873,81 @@ const groceryService: GroceryService = {
     await simulateLatency();
     return loadSnapshot().pantry;
   },
+  async addPantry(name, quantity) {
+    await simulateLatency(100, 220);
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new Error('Item name is required.');
+    }
+    const item: PantryItem = {
+      id: createId('pan'),
+      name: trimmed,
+      location: 'pantry',
+      quantityLabel: quantity?.trim() ?? '',
+      lowStock: false,
+    };
+    updateSnapshot(current => ({...current, pantry: [item, ...current.pantry]}));
+    return item;
+  },
+  async updatePantry(id, patch) {
+    await simulateLatency(80, 160);
+    const name = patch.name.trim();
+    if (!name) {
+      throw new Error('Item name is required.');
+    }
+    const snapshot = updateSnapshot(current => ({
+      ...current,
+      pantry: current.pantry.map(item =>
+        item.id === id ? {...item, name, quantityLabel: patch.quantity?.trim() ?? ''} : item,
+      ),
+    }));
+    const item = snapshot.pantry.find(value => value.id === id);
+    if (!item) {
+      throw new Error('Inventory item not found.');
+    }
+    return item;
+  },
+  async removePantry(id) {
+    await simulateLatency(80, 160);
+    updateSnapshot(current => ({
+      ...current,
+      pantry: current.pantry.filter(item => item.id !== id),
+    }));
+  },
+  async completeShopping() {
+    await simulateLatency(120, 240);
+    updateSnapshot(current => {
+      const moving = current.grocery.filter(item => !item.desk && item.checked);
+      if (!moving.length) {
+        return current;
+      }
+      const pantry = current.pantry.map(item => ({...item}));
+      moving.forEach(item => {
+        const match = pantry.find(stock => stock.name.toLowerCase() === item.name.toLowerCase());
+        const quantity = item.quantity?.trim() ?? '';
+        if (match) {
+          if (quantity) {
+            match.quantityLabel = quantity;
+          }
+          match.lowStock = false;
+          return;
+        }
+        pantry.unshift({
+          id: createId('pan'),
+          name: item.name,
+          location: 'pantry',
+          quantityLabel: quantity,
+          lowStock: false,
+        });
+      });
+      const movedIds = new Set(moving.map(item => item.id));
+      return {
+        ...current,
+        pantry,
+        grocery: current.grocery.filter(item => !movedIds.has(item.id)),
+      };
+    });
+  },
   async usePantryItemTonight(itemId) {
     requireEditor();
     await simulateLatency();
@@ -649,6 +984,8 @@ const randomizerService: RandomizerService = {
       .filter((id): id is string => Boolean(id));
     const pool = snapshot.recipes.filter(recipe => recipe.favorite || recipe.themes.includes(input.theme));
     const candidates = pool.length ? pool : snapshot.recipes;
+    const treatDays = snapshot.plan.slots.filter(slot => slot.mealType === 'dinner' && slot.status === 'eatingOut').length;
+    const preferTreats = input.preferTreats || treatDays >= 2;
     const scores = candidates.map(recipe =>
       scoreRecipe({
         recipe,
@@ -658,6 +995,8 @@ const randomizerService: RandomizerService = {
         plannedRecipeIds: plannedIds(snapshot.plan),
         pantryFriendlyIds,
         maxCookMinutes: mood?.maxCookMinutes,
+        occasion: input.occasion,
+        preferTreats,
       }),
     );
     const recipe = pickWeighted(candidates, scores);
@@ -670,7 +1009,7 @@ const randomizerService: RandomizerService = {
     }));
     return {
       recipe,
-      reason: explainMatch(recipe, input.theme, input.moodId),
+      reason: explainMatch(recipe, input.theme, input.moodId, preferTreats || input.occasion === 'cheat'),
       recommendedChefIds: recipe.chefIds,
       matchPercent,
       spinsLeft: loadSnapshot().spinsLeft,

@@ -4,17 +4,15 @@ import {colors, radii} from '../theme/tokens';
 import {AppButton, AppText, Chip, Screen, ScreenHeader} from '../components/ui';
 import {useAppStore} from '../store/useAppStore';
 import {useHouseholdMutations} from '../hooks/useFamFeast';
-import type {HouseholdRole, Permission} from '../domain/types';
+import type {HouseholdRole} from '../domain/types';
 import type {RootProps} from '../app/navigation/types';
 
 const ROLES: HouseholdRole[] = ['Mother', 'Father', 'Son', 'Daughter', 'Grandma', 'Grandpa', 'Custom'];
-const PERMS: Permission[] = ['editor', 'suggester', 'viewer'];
 
 export function AddMemberScreen({navigation, route}: RootProps<'AddMember'>) {
   const existing = useAppStore(state => state.snapshot.members.find(member => member.id === route.params?.memberId));
   const [name, setName] = useState(existing?.name ?? '');
   const [role, setRole] = useState<HouseholdRole>(existing?.role ?? 'Custom');
-  const [permission, setPermission] = useState<Permission>(existing?.permission ?? 'suggester');
   const [specialty, setSpecialty] = useState(existing?.specialty ?? 'Kitchen helper');
   const {addMember, updateMember} = useHouseholdMutations();
 
@@ -30,12 +28,6 @@ export function AddMemberScreen({navigation, route}: RootProps<'AddMember'>) {
           <Chip key={item} label={item} selected={role === item} onPress={() => setRole(item)} />
         ))}
       </View>
-      <AppText variant="labelLg">Permission</AppText>
-      <View style={styles.row}>
-        {PERMS.map(item => (
-          <Chip key={item} label={item} selected={permission === item} onPress={() => setPermission(item)} />
-        ))}
-      </View>
       <AppButton
         label={existing ? 'Save member' : 'Add to household'}
         onPress={async () => {
@@ -43,15 +35,15 @@ export function AddMemberScreen({navigation, route}: RootProps<'AddMember'>) {
             return;
           }
           if (existing) {
-            await updateMember(existing.id, {name: name.trim(), role, permission, specialty});
+            await updateMember(existing.id, {name: name.trim(), role, permission: existing.permission, specialty});
           } else {
             await addMember({
               name: name.trim(),
               role,
-              permission,
+              permission: 'suggester',
               specialty,
               badge: role,
-              helper: permission !== 'editor',
+              helper: true,
             });
           }
           navigation.goBack();

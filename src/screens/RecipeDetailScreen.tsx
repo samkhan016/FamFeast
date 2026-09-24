@@ -7,21 +7,18 @@ import {
   Fire,
   ForkKnife,
   Heart,
-  Microphone,
   Play,
   Pause,
   ShareNetwork,
   Timer,
   CookingPot,
-  Package,
-  ShoppingCart,
   ClosedCaptioning,
   CornersOut,
   SpeakerHigh,
   PencilSimple,
 } from 'phosphor-react-native';
 import {colors, radii, spacing} from '../theme/tokens';
-import {AppSwitch, AppText, CachedImage, ScreenHeader} from '../components/ui';
+import {AppText, CachedImage, ScreenHeader} from '../components/ui';
 import {useAppStore} from '../store/useAppStore';
 import {services} from '../services';
 import {useQuery} from '@tanstack/react-query';
@@ -57,7 +54,6 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
   const notes = snapshot.chefNotes.filter(note => note.recipeId === recipeId);
   const [servings, setServings] = useState(4);
   const [liked, setLiked] = useState(recipe?.favorite ?? false);
-  const [voice, setVoice] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState('');
   const [shareToast, setShareToast] = useState(false);
@@ -65,9 +61,6 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
   const [prepped, setPrepped] = useState<Record<string, boolean>>({});
   const [seconds, setSeconds] = useState(480);
   const [timerOn, setTimerOn] = useState(false);
-  const [groceryAdded, setGroceryAdded] = useState(false);
-  const [cooking, setCooking] = useState(false);
-  const [cooked, setCooked] = useState(false);
   const [progress, setProgress] = useState(30);
   const [timeLabel, setTimeLabel] = useState('04:18 / 14:20');
   const interval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -136,7 +129,7 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
         }}
         bookmarked={liked}
       />
-      <ScrollView contentContainerStyle={[styles.content, {paddingBottom: 110 + insets.bottom}]}>
+      <ScrollView contentContainerStyle={[styles.content, {paddingBottom: 24 + insets.bottom}]}>
         <View style={[styles.rowBetween, styles.wrap]}>
           <Pressable onPress={() => navigation.goBack()} style={styles.backChip} accessibilityRole="button">
             <ArrowLeft size={18} color={colors.primary} />
@@ -171,7 +164,7 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
         {shareToast ? (
           <View style={styles.shareToast}>
             <AppText variant="labelMd" color={colors.onSecondaryContainer}>
-              ✓  Link copied! Sent push to The Miller Feast group chat 💬
+              Link copied. Sent to the household.
             </AppText>
           </View>
         ) : null}
@@ -255,66 +248,12 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
               </Pressable>
             ))}
           </ScrollView>
-          <View style={[styles.voice, styles.wrap]}>
-            <View style={[styles.row, styles.flex]}>
-              <View style={styles.mic}>
-                <Microphone size={20} color={colors.onPrimary} />
-              </View>
-              <View style={styles.flex}>
-                <AppText variant="labelMd" style={styles.bold} numberOfLines={2}>
-                  Hands-Free Kitchen Voice Mode
-                </AppText>
-                <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={1}>
-                  Say "Next Step" or "Timer pause"
-                </AppText>
-              </View>
-            </View>
-            <AppSwitch
-              size="sm"
-              value={voice}
-              label="Hands-free kitchen voice mode"
-              onValueChange={value => {
-                setVoice(value);
-                if (value) {
-                  showToast('Hands-free assistant is a local kitchen reminder.', 'info');
-                }
-              }}
-            />
-          </View>
         </View>
 
         <View style={styles.card}>
-          <View style={[styles.row, {flexWrap: 'wrap'}]}>
-            <View style={styles.chefChip}>
-              <AppText variant="labelSm" color={colors.onPrimaryFixed} style={styles.bold}>
-                👩‍🍳 Chef Mom (Lead)
-              </AppText>
-            </View>
-            <View style={styles.helperChip}>
-              <AppText variant="labelSm" color={colors.onSecondaryContainer} style={styles.bold}>
-                🥗 Maya (Salad Toss)
-              </AppText>
-            </View>
-            {recipe.familyRating ? (
-              <View style={styles.ratingChip}>
-                <AppText variant="labelSm" color={colors.onTertiaryFixed} style={styles.bold}>
-                  ⭐ {recipe.familyRating} ({recipe.voteCount ?? 4} votes)
-                </AppText>
-              </View>
-            ) : null}
-          </View>
           <AppText variant="headlineLg" style={styles.title} numberOfLines={3}>
             {recipe.title}
           </AppText>
-          <View style={styles.fit}>
-            <AppText style={styles.bolt}>⚡</AppText>
-            <AppText variant="bodySm" color={colors.onSurfaceVariant}>
-              <AppText variant="bodySm" style={styles.semibold}>
-                Perfect Schedule Fit:
-              </AppText>{' '}
-              Matches tonight's <AppText variant="bodySm" color={colors.primary} style={styles.bold}>"Post-School Tired"</AppText> craving vibe — just 15 minutes active sizzle with minimal prep!
-            </AppText>
-          </View>
           <View style={styles.stats}>
             {[
               ['schedule', 'Total', `${recipe.cookMinutes + recipe.prepMinutes} mins`, colors.primary],
@@ -333,59 +272,6 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
               </View>
             ))}
           </View>
-        </View>
-
-        <View style={styles.pantryAlert}>
-          <View style={[styles.rowBetween, styles.wrap]}>
-            <View style={[styles.row, styles.flex]}>
-              <View style={styles.pantryIcon}>
-                <Package size={18} color={colors.onSecondaryContainer} />
-              </View>
-              <View style={styles.flex}>
-                <AppText variant="labelMd" style={styles.bold} numberOfLines={2}>
-                  All {recipe.ingredients.length} Ingredients In Pantry!
-                </AppText>
-                <AppText variant="labelSm" color={colors.secondary} style={styles.semibold} numberOfLines={1}>
-                  Miller Pantry Sync • Checked 2h ago
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.ready}>
-              <AppText variant="labelSm" color={colors.onSecondary} style={styles.bold}>
-                Ready
-              </AppText>
-            </View>
-          </View>
-          <View style={[styles.row, styles.wrap]}>
-            <View style={styles.safePill}>
-              <AppText variant="labelSm">✓ Nut-Free Safe</AppText>
-            </View>
-            <View style={styles.safePill}>
-              <AppText variant="labelSm">✓ Kid Approved</AppText>
-            </View>
-            <View style={styles.safePill}>
-              <AppText variant="labelSm">🌿 Low Sodium Mod Available</AppText>
-            </View>
-          </View>
-          <Pressable
-            onPress={() => {
-              setGroceryAdded(true);
-              setTimeout(() => setGroceryAdded(false), 3000);
-            }}
-            style={[styles.backup, groceryAdded && styles.backupOn]}>
-            {groceryAdded ? (
-              <AppText variant="labelMd" color={colors.onSecondaryContainer} style={styles.bold}>
-                Added to Miller Grocery List!
-              </AppText>
-            ) : (
-              <>
-                <ShoppingCart size={18} color={colors.primary} />
-                <AppText variant="labelMd" color={colors.primary} style={styles.bold}>
-                  Add Backup Ingredients to Grocery List
-                </AppText>
-              </>
-            )}
-          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -429,13 +315,12 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
                   {ingredient.note ? (
                     <AppText variant="labelSm" color={colors.onSurfaceVariant}>
                       {ingredient.note}
-                      {ingredient.assigneeId ? ' 🥗' : ''}
                     </AppText>
                   ) : null}
                 </View>
                 <View style={[styles.loc, ingredient.assigneeId && styles.mayaTask]}>
                   <AppText variant="labelSm" color={ingredient.assigneeId ? colors.onSecondaryContainer : colors.onSurfaceVariant} style={ingredient.assigneeId ? styles.bold : undefined} numberOfLines={1}>
-                    {ingredient.assigneeId ? 'Maya Task' : ingredient.name.includes('Sesame') ? 'Condiments' : LOCATION_LABEL[ingredient.location] ?? 'Pantry'}
+                    {LOCATION_LABEL[ingredient.location] ?? 'Other'}
                   </AppText>
                 </View>
               </Pressable>
@@ -530,7 +415,6 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
         <View style={styles.card}>
           <View style={[styles.rowBetween, styles.wrap]}>
             <View style={[styles.row, styles.flex]}>
-              <AppText style={styles.bolt}>📝</AppText>
               <AppText variant="headlineMd" style={[styles.bold, styles.flex]} numberOfLines={1}>
                 Household Customizations
               </AppText>
@@ -545,7 +429,7 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
             return (
               <View key={item.id} style={[styles.note, dad ? styles.noteDad : styles.noteMaya]}>
                 <View style={[styles.noteFace, dad ? styles.noteDadFace : styles.noteMayaFace]}>
-                  <AppText>{author?.emoji ?? '👨'}</AppText>
+                  <AppText>{author?.avatarInitial ?? ''}</AppText>
                 </View>
                 <View style={styles.flex}>
                   <View style={styles.rowBetween}>
@@ -572,43 +456,13 @@ export function RecipeDetailScreen({navigation, route}: RootProps<'RecipeDetail'
         </View>
       </ScrollView>
 
-      <View style={[styles.cookBar, {paddingBottom: Math.max(insets.bottom, 16)}]}>
-        <Pressable
-          onPress={() => {
-            setCooking(true);
-            showToast('Guided cooking mode is ready in the kitchen.', 'success');
-          }}
-          style={[styles.cookMain, cooking && styles.cookOn]}>
-          <CookingPot size={24} color={colors.onPrimary} />
-          <AppText variant="labelLg" color={colors.onPrimary} style={[styles.bold, styles.flex]} numberOfLines={1}>
-            {cooking ? 'Cooking In Progress 🍳' : 'Start Cooking Mode 👨‍🍳'}
-          </AppText>
-          {!cooking ? (
-            <View style={styles.mins}>
-              <AppText variant="labelSm" color="#fff" style={styles.semibold}>
-                {recipe.cookMinutes + recipe.prepMinutes}m
-              </AppText>
-            </View>
-          ) : null}
-        </Pressable>
-        <Pressable
-          onPress={() => {
-            setCooked(true);
-            showToast('Feast logged for the household.', 'success');
-          }}
-          style={[styles.cooked, cooked && styles.cookedOn]}
-          accessibilityLabel="Mark Feast as Cooked">
-          <Check size={22} color={cooked ? colors.onSecondary : colors.onSecondaryContainer} />
-        </Pressable>
-      </View>
-
       <Modal visible={noteOpen} transparent animationType="fade" onRequestClose={() => setNoteOpen(false)}>
         <KeyboardAvoidingView style={styles.scrim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable style={styles.scrimPress} onPress={() => setNoteOpen(false)}>
             <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={styles.rowBetween}>
               <AppText variant="headlineMd" style={styles.bold}>
-                👩‍🍳 Leave Chef Note
+                Leave chef note
               </AppText>
               <Pressable onPress={() => setNoteOpen(false)} style={styles.close}>
                 <AppText>✕</AppText>

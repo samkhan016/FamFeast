@@ -9,7 +9,9 @@ type AppStackComponent = ComponentType<{onboarded: boolean}>;
 
 export function RootNavigator() {
   const bootstrap = useBootstrap();
-  const onboarded = useAppStore(state => state.snapshot.onboardingComplete);
+  const onboarded = useAppStore(
+    state => state.snapshot.signedIn && state.snapshot.onboardingComplete,
+  );
   const [minHold, setMinHold] = useState(true);
   const [AppStack, setAppStack] = useState<AppStackComponent | null>(null);
 

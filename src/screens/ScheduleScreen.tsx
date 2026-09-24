@@ -1,17 +1,18 @@
 import {memo, useEffect, useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import {ArrowRight, Check, CheckCircle, DiceFive, ForkKnife, Lightning, LinkSimple, Package, PersonSimpleRun, SlidersHorizontal, Star, YoutubeLogo} from 'phosphor-react-native';
+import {ArrowRight, Check, CheckCircle, DiceFive, ForkKnife, LinkSimple, Package, PersonSimpleRun, SlidersHorizontal, Star, YoutubeLogo} from 'phosphor-react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import {colors, radii, spacing} from '../theme/tokens';
 import {WEEKLY_THEMES} from '../theme/weeklyThemes';
 import {AppSwitch, AppText, CachedImage, Card, ScreenHeader} from '../components/ui';
-import {DaySelector} from '../components/planner/DaySelector';
+import {DaySelector, MonthSelector} from '../components/planner/DaySelector';
 import {ScheduleSkeleton} from '../components/planner/ScheduleSkeleton';
 import {EmptyState, ErrorState} from '../components/ui';
-import {usePlanMutations, useRecipes, useWeeklyPlan} from '../hooks/useFamFeast';
+import {usePlanMutations, useRecipes, useSuggestionMutations, useWeeklyPlan} from '../hooks/useFamFeast';
 import {useAppStore} from '../store/useAppStore';
-import {formatWeekRange, addDaysISO, weekdayName} from '../utils/dates';
+import {formatWeekRange, addDaysISO, weekDatesISO, weekdayName} from '../utils/dates';
+import type {DayOccasion} from '../domain/types';
 import {getShareLink} from '../services';
 import type {MealSlot, Recipe} from '../domain/types';
 import type {TabProps} from '../app/navigation/types';
@@ -25,11 +26,14 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
   const canEdit = useAppStore(state => state.canEdit());
   const showToast = useAppStore(state => state.showToast);
   const mutations = usePlanMutations();
+  const suggestions = useSuggestionMutations();
 
   const plan = planQuery.data ?? snapshot.plan;
   const recipes = recipesQuery.data ?? snapshot.recipes;
   const theme = WEEKLY_THEMES[plan.theme];
-  const dates = useMemo(() => [...new Set(plan.slots.map(slot => slot.date))], [plan.slots]);
+  const allDates = useMemo(() => [...new Set(plan.slots.map(slot => slot.date))].sort(), [plan.slots]);
+  const span = snapshot.household.calendarSpan ?? 'week';
+  const dates = span === 'month' ? allDates : weekDatesISO(selectedDate).filter(date => allDates.includes(date));
   const daySlots = plan.slots.filter(slot => slot.date === selectedDate);
   const dinner = daySlots.find(slot => slot.mealType === 'dinner');
   const lunch = daySlots.find(slot => slot.mealType === 'lunch');
@@ -52,6 +56,25 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
   const plannedCount = daySlots.filter(slot => slot.recipeId).length;
   const weekNum = plan.weekId.split('-W')[1] ?? '';
 
+  const markOccasion = async (occasion?: DayOccasion) => {
+    if (canEdit) {
+      await mutations.setOccasion(selectedDate, occasion);
+      return;
+    }
+    if (!occasion) {
+      showToast('Ask the household owner to clear this day.', 'info');
+      return;
+    }
+    const label = occasion === 'cheat' ? 'Cheat day' : occasion === 'party' ? 'Party' : 'Birthday';
+    await suggestions.submit({
+      title: `${label} on ${weekdayName(selectedDate)}`,
+      kind: 'plan',
+      targetDate: selectedDate,
+      occasion,
+      note: 'Change of plans',
+    });
+  };
+
   const share = () => {
     Clipboard.setString(getShareLink());
     showToast(`Link copied: ${getShareLink().replace('https://', '')}`, 'success');
@@ -59,7 +82,12 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
 
   const togglePlans = async () => {
     if (!canEdit) {
-      showToast('Ask a household editor to change tonight’s plan.', 'info');
+      await suggestions.submit({
+        title: `Eat out on ${weekdayName(selectedDate)}`,
+        kind: 'plan',
+        targetDate: selectedDate,
+        note: 'Sudden change of plans',
+      });
       return;
     }
     const next = !eatingOut;
@@ -113,7 +141,7 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
           <View style={styles.bannerTop}>
             <View style={styles.partyPill}>
               <AppText variant="labelSm" color={colors.onPrimary} numberOfLines={1}>
-                🎉  {theme.label} Mode
+                {theme.label} Mode
               </AppText>
             </View>
             <AppText variant="labelSm" color={colors.primaryFixedDim} style={styles.weekCaps} numberOfLines={1}>
@@ -123,7 +151,7 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
           <View style={styles.bannerBottom}>
             <View style={styles.flex}>
               <AppText variant="headlineLg" color={colors.onPrimary} style={styles.bannerTitle} numberOfLines={2}>
-                {theme.id === 'party' ? `${weekdayName(selectedDate)} Fiesta! 🌮🎉` : `${weekdayName(selectedDate)} feast`}
+                {theme.id === 'party' ? `${weekdayName(selectedDate)} Fiesta` : `${weekdayName(selectedDate)} feast`}
               </AppText>
               <AppText variant="bodySm" color={colors.primaryFixed} numberOfLines={2}>
                 {theme.tagline}
@@ -138,26 +166,6 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
           </View>
         </LinearGradient>
 
-        <View style={styles.energy}>
-          <View style={styles.energyIcon}>
-            <Lightning size={22} color={colors.onTertiary} weight="fill" />
-          </View>
-          <View style={styles.flex}>
-            <View style={styles.energyMeta}>
-              <AppText variant="labelSm" color={colors.tertiary} style={styles.energyCaps}>
-                Family Energy Gauge
-              </AppText>
-              <View style={styles.energyDot} />
-              <AppText variant="labelSm" color={colors.onSurfaceVariant}>
-                4:30 PM Check-in
-              </AppText>
-            </View>
-            <AppText variant="bodySm" style={styles.energyCopy} numberOfLines={3}>
-              {plan.energyLabel}
-            </AppText>
-          </View>
-        </View>
-
         <Card>
           <View style={styles.rowBetween}>
             <View style={[styles.row, styles.flex, styles.nowrap]}>
@@ -169,41 +177,35 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
                   Sudden change of plans tonight?
                 </AppText>
                 <AppText variant="bodySm" color={colors.onSurfaceVariant} numberOfLines={2}>
-                  Quick toggle adapts meals & rescues pantry prep
+                  Tell the household if plans change tonight
                 </AppText>
               </View>
             </View>
             <View style={styles.shrink}>
-              <AppSwitch
-                value={eatingOut}
-                disabled={!canEdit}
-                onValueChange={() => togglePlans()}
-                label="Eating out tonight"
-              />
+              {canEdit ? (
+                <AppSwitch value={eatingOut} onValueChange={() => togglePlans()} label="Eating out tonight" />
+              ) : (
+                <Pressable onPress={() => togglePlans()} style={styles.tell} accessibilityRole="button">
+                  <AppText variant="labelSm" color={colors.primary} numberOfLines={2}>
+                    Tell the household
+                  </AppText>
+                </Pressable>
+              )}
             </View>
           </View>
           {eatingOut ? (
             <View style={styles.takeout}>
               <View style={[styles.row, styles.wrap]}>
-                <View style={styles.habitPill}>
-                  <AppText variant="labelSm" color={colors.onPrimaryFixed} numberOfLines={1}>
-                    Habit Pattern Detected
-                  </AppText>
-                </View>
+                {plan.slots.filter(slot => slot.mealType === 'dinner' && slot.status === 'eatingOut').length >= 2 ? (
+                  <View style={styles.habitPill}>
+                    <AppText variant="labelSm" color={colors.onPrimaryFixed} numberOfLines={1}>
+                      Repeating outing
+                    </AppText>
+                  </View>
+                ) : null}
                 <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={2} style={styles.flex}>
-                  2nd Thursday eating out this month
+                  Spin will suggest easier treats when eating out keeps coming up.
                 </AppText>
-              </View>
-              <AppText variant="bodySm">
-                Tonight’s {dinner?.recipeId ? recipeMap[dinner.recipeId]?.title : 'dinner'} prep will safely freeze and bump to Saturday Dinner!
-              </AppText>
-              <View style={[styles.row, styles.wrap]}>
-                <View style={styles.placePill}>
-                  <AppText variant="labelSm" numberOfLines={1}>🌿 Wild Greens Grill (8m away)</AppText>
-                </View>
-                <View style={styles.placePill}>
-                  <AppText variant="labelSm" numberOfLines={1}>🍔 Bun & Seed Artisan Burgers (12m)</AppText>
-                </View>
               </View>
             </View>
           ) : null}
@@ -218,7 +220,53 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
               {formatWeekRange(plan.startDate, plan.endDate)}
             </AppText>
           </View>
-          <DaySelector dates={dates} selected={selectedDate} onSelect={setSelectedDate} />
+          <View style={styles.spanRow}>
+            {(['week', 'month'] as const).map(item => (
+              <Pressable
+                key={item}
+                accessibilityRole="button"
+                onPress={() => {
+                  if (!canEdit) {
+                    showToast('The household owner sets the calendar.', 'info');
+                    return;
+                  }
+                  mutations.setCalendarSpan(item);
+                }}
+                style={[styles.spanChip, span === item && styles.spanOn]}>
+                <AppText variant="labelSm" color={span === item ? colors.onPrimary : colors.onSurfaceVariant} numberOfLines={1}>
+                  {item === 'week' ? 'Week' : 'Month'}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+          {span === 'month' ? (
+            <MonthSelector dates={dates.length ? dates : allDates} selected={selectedDate} onSelect={setSelectedDate} />
+          ) : (
+            <DaySelector dates={dates.length ? dates : allDates} selected={selectedDate} onSelect={setSelectedDate} />
+          )}
+        </View>
+
+        <View style={styles.occasionRow}>
+          {(
+            [
+              ['cheat', 'Cheat day'],
+              ['party', 'Party'],
+              ['birthday', 'Birthday'],
+            ] as const
+          ).map(([id, label]) => {
+            const on = dinner?.occasion === id;
+            return (
+              <Pressable
+                key={id}
+                accessibilityRole="button"
+                onPress={() => markOccasion(on ? undefined : id)}
+                style={[styles.spanChip, on && styles.spanOn]}>
+                <AppText variant="labelSm" color={on ? colors.onPrimary : colors.onSurface} numberOfLines={1}>
+                  {label}
+                </AppText>
+              </Pressable>
+            );
+          })}
         </View>
 
         <View style={[styles.rowBetween, styles.wrap]}>
@@ -246,7 +294,7 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
         {!dinner?.recipeId && !eatingOut ? (
           <EmptyState
             title="No dinner planned yet"
-            body="Spin a favourite or pick a dish from the cookbook."
+            body="Spin a favourite or pick a dish for this day."
             actionLabel="Spin a meal"
             onAction={() => navigation.navigate('Spin', {date: selectedDate})}
           />
@@ -301,6 +349,12 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
           />
         ) : null}
 
+        <VideoSuggestions
+          recipes={recipes}
+          theme={plan.theme}
+          onOpen={recipeId => navigation.navigate('RecipeDetail', {recipeId})}
+        />
+
         <View style={styles.quickSwap}>
           <View style={[styles.row, styles.flex, styles.nowrap]}>
             <View style={styles.swapIcon}>
@@ -330,6 +384,47 @@ export function ScheduleScreen({navigation}: TabProps<'Schedule'>) {
   );
 }
 
+function VideoSuggestions({
+  recipes,
+  theme,
+  onOpen,
+}: {
+  recipes: Recipe[];
+  theme: string;
+  onOpen: (recipeId: string) => void;
+}) {
+  const videos = [...recipes]
+    .filter(recipe => recipe.youtube)
+    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || Number(b.themes.includes(theme as Recipe['themes'][number])) - Number(a.themes.includes(theme as Recipe['themes'][number])))
+    .slice(0, 4);
+  if (!videos.length) {
+    return null;
+  }
+  return (
+    <View style={{gap: 8}}>
+      <AppText variant="labelLg">How to make it</AppText>
+      {videos.map(recipe => (
+        <Pressable key={recipe.id} onPress={() => onOpen(recipe.id)} accessibilityRole="button">
+          <Card>
+            <View style={styles.videoCard}>
+              <CachedImage uri={recipe.youtube?.thumbnail ?? recipe.thumbnail} label={recipe.title} style={styles.videoThumb} />
+              <View style={styles.flex}>
+                <AppText variant="labelMd" numberOfLines={2}>
+                  {recipe.favorite ? 'Favorite · ' : ''}
+                  {recipe.title}
+                </AppText>
+                <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={1}>
+                  {recipe.youtube?.channel} · {recipe.ingredients.length} ingredients · {recipe.steps.length} steps
+                </AppText>
+              </View>
+            </View>
+          </Card>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 const FeaturedMeal = memo(function FeaturedMeal({
   slot,
   recipe,
@@ -354,7 +449,7 @@ const FeaturedMeal = memo(function FeaturedMeal({
           <View style={styles.chefTag}>
             <View style={styles.liveDot} />
             <AppText variant="labelSm" numberOfLines={1}>
-              Chef: {chefName ?? 'Open'} {chefName === 'Mom' ? '👩‍🍳 (Apron On!)' : chefName === 'Dad' ? '👨‍🍳' : ''}
+              Chef: {chefName ?? 'Open'}
             </AppText>
           </View>
         </View>
@@ -410,12 +505,12 @@ const FeaturedMeal = memo(function FeaturedMeal({
               <View style={styles.dietPills}>
                 <View style={styles.dietPill}>
                   <AppText variant="labelSm" color={colors.onSecondaryFixedVariant} numberOfLines={1}>
-                    🥬 Sweet & Light
+                    Sweet & Light
                   </AppText>
                 </View>
                 <View style={styles.kidPill}>
                   <AppText variant="labelSm" color={colors.onTertiaryFixed} numberOfLines={1}>
-                    ⭐ Kid Favorite
+                    Kid Favorite
                   </AppText>
                 </View>
               </View>
@@ -462,7 +557,7 @@ const CompactMeal = memo(function CompactMeal({
                 </AppText>
               </View>
               <AppText variant="labelSm" color={served ? colors.secondary : colors.onSurfaceVariant} style={served ? styles.servedCopy : undefined} numberOfLines={1}>
-                {served ? 'Served • Cleaned Up' : chefName ? `Chef: ${chefName} 👨‍🍳` : 'Open slot'}
+                {served ? 'Served • Cleaned Up' : chefName ? `Chef: ${chefName}` : 'Open slot'}
               </AppText>
             </View>
             <AppText variant="labelLg" numberOfLines={1}>
@@ -560,6 +655,31 @@ const styles = StyleSheet.create({
   },
   takeout: {marginTop: 12, backgroundColor: colors.surfaceLow, borderRadius: 16, padding: 12, gap: 8},
   habitPill: {backgroundColor: colors.primaryFixed, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8},
+  tell: {
+    maxWidth: 108,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  spanRow: {flexDirection: 'row', gap: 8, marginBottom: 8},
+  spanChip: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 1,
+  },
+  spanOn: {backgroundColor: colors.primary},
+  occasionRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  videoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minWidth: 0,
+  },
+  videoThumb: {width: 72, height: 48, borderRadius: 10, flexShrink: 0},
   placePill: {
     backgroundColor: colors.surfaceLowest,
     paddingHorizontal: 10,

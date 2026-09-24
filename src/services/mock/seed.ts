@@ -13,10 +13,10 @@ import {weekDates, weekIdFor, toISODate, addDaysISO} from '../../utils/dates';
 import type {WeeklyThemeId} from '../../theme/weeklyThemes';
 
 export const MOODS: MoodOption[] = [
-  {id: 'exhausted', label: 'Tired Post-Sports', hint: '< 15 min prep', energyLabel: 'Low Energy • 15m Fast', emoji: '😴', maxCookMinutes: 15},
-  {id: 'celebrate', label: 'Celebratory', hint: 'Fun finger bites', energyLabel: 'Moderate • 25m', emoji: '🥳'},
-  {id: 'sweet', label: 'Sweet & Light', hint: 'Fruity & fresh', energyLabel: 'Light • Fresh & Fruity', emoji: '🍓', maxCookMinutes: 25},
-  {id: 'comfort', label: 'Comfort Craving', hint: 'Warm & hearty', energyLabel: 'Cozy Warm • Casserole Mode', emoji: '🍲'},
+  {id: 'exhausted', label: 'Tired Post-Sports', hint: '< 15 min prep', energyLabel: 'Low Energy • 15m Fast', maxCookMinutes: 15},
+  {id: 'celebrate', label: 'Celebratory', hint: 'Fun finger bites', energyLabel: 'Moderate • 25m'},
+  {id: 'sweet', label: 'Sweet & Light', hint: 'Fruity & fresh', energyLabel: 'Light • Fresh & Fruity', maxCookMinutes: 25},
+  {id: 'comfort', label: 'Comfort Craving', hint: 'Warm & hearty', energyLabel: 'Cozy Warm • Casserole Mode'},
   {id: 'busy', label: 'Packed Workday', hint: 'Need a quick meal', energyLabel: 'Busy Day • Keep it easy', maxCookMinutes: 20},
   {id: 'outside', label: 'Eating Outside', hint: 'Skip home cook', energyLabel: 'Outing night'},
 ];
@@ -34,7 +34,6 @@ export const members: Member[] = [
     specialty: 'Hearty Comfort Meals',
     badge: 'Weekday Maestro',
     helper: false,
-    emoji: '👩',
   },
   {
     id: 'dad',
@@ -48,7 +47,6 @@ export const members: Member[] = [
     specialty: 'Weekend BBQ Chef',
     badge: 'Weekend Smoker & Grill Master',
     helper: false,
-    emoji: '👨',
   },
   {
     id: 'leo',
@@ -62,7 +60,6 @@ export const members: Member[] = [
     specialty: 'Master Salsa Maker',
     badge: 'Sous Chef & Taco Specialist',
     helper: false,
-    emoji: '👦',
   },
   {
     id: 'maya',
@@ -76,7 +73,6 @@ export const members: Member[] = [
     specialty: 'Berry Parfaits',
     badge: 'Dessert & Salad Decorator',
     helper: true,
-    emoji: '👧',
   },
 ];
 
@@ -120,7 +116,7 @@ export const recipes: Recipe[] = [
       {id: 'hc2', name: 'Soy Sauce & 3 tbsp Honey', quantity: 4, unit: 'tbsp', note: 'Low sodium preferred by Dad', location: 'pantry'},
       {id: 'hc3', name: 'Garlic & 1 tbsp Ginger', quantity: 4, unit: 'cloves', note: 'Finely minced & grated', location: 'spice'},
       {id: 'hc4', name: 'Cornstarch', quantity: 0.5, unit: 'cup', note: 'Secret for extra crunchy coating', location: 'other'},
-      {id: 'hc5', name: 'Cabbage & Carrot Slaw', quantity: 3, unit: 'cups', note: 'Assigned to Maya 🥗', location: 'fridge', assigneeId: 'maya'},
+      {id: 'hc5', name: 'Cabbage & Carrot Slaw', quantity: 3, unit: 'cups', note: 'Assigned to Maya', location: 'fridge', assigneeId: 'maya'},
       {id: 'hc6', name: 'Sesame Oil & Rice Vinegar', quantity: 2, unit: 'tbsp', note: 'Plus toasted sesame seeds for garnish', location: 'other'},
     ],
     steps: [
@@ -419,9 +415,6 @@ function defaultHousehold(): Household {
     theme: 'party',
     vibe: 'Rustic Comfort & Fresh Bakes',
     startedOn: '2023-09-01',
-    takeoutSafeguard: true,
-    groceryBudgetSync: true,
-    kidsCookFriday: true,
     dietaryAlerts: [
       {id: 'peanut', label: 'Peanut-Free', danger: true},
       {id: 'spice', label: 'Mild Spice Only (Leo & Maya)'},
@@ -429,6 +422,9 @@ function defaultHousehold(): Household {
     ],
     favoritePlates: ['Italian Hearth', 'Taco Tuesdays', 'Slow Cooker Comfort', 'Fresh Mediterranean'],
     marketLabel: 'Whole Foods Market • Auto-cart ready',
+    plan: 'family',
+    calendarSpan: 'week',
+    ownerId: 'mom',
   };
 }
 
@@ -488,7 +484,7 @@ function buildPlan(theme: WeeklyThemeId): WeeklyPlan {
     endDate: end,
     theme,
     moodId: 'sweet',
-    energyLabel: 'Mood: Post-School Tired 🥱 → Sweet & light meals prioritized!',
+    energyLabel: 'Mood: Post-School Tired. Sweet and light meals prioritized.',
     slots,
     prepTasks: todayDinner
       ? [
@@ -513,6 +509,7 @@ function suggestions(): Suggestion[] {
       upVoterIds: ['leo', 'dad', 'mom'],
       downVoterIds: ['maya'],
       status: 'open',
+      kind: 'dish',
       targetDate: toISODate(days[4]),
       createdAt: new Date().toISOString(),
     },
@@ -526,6 +523,7 @@ function suggestions(): Suggestion[] {
       upVoterIds: ['mom', 'dad', 'leo', 'maya'],
       downVoterIds: [],
       status: 'accepted',
+      kind: 'dish',
       targetDate: toISODate(days[2]),
       createdAt: new Date().toISOString(),
     },
@@ -539,6 +537,7 @@ function suggestions(): Suggestion[] {
       upVoterIds: ['dad', 'leo'],
       downVoterIds: ['maya', 'mom'],
       status: 'open',
+      kind: 'dish',
       createdAt: new Date().toISOString(),
     },
   ];
@@ -572,7 +571,7 @@ const grocery: GroceryItem[] = [
     category: 'produce',
     quantity: '2 bags (Rainbow)',
     checked: false,
-    helperLabel: 'Helper: Maya 👧',
+    helperLabel: 'Helper: Maya',
     kidsTask: true,
     requestedBy: 'maya',
   },
@@ -584,7 +583,7 @@ const grocery: GroceryItem[] = [
     quantity: '2.5 lbs',
     checked: false,
     tonight: true,
-    recipeLabel: 'Mom Chef Duty 🍗',
+    recipeLabel: 'Mom Chef Duty',
     priceLabel: '~$14.50',
   },
   {
@@ -697,7 +696,7 @@ const pantry: PantryItem[] = [
     id: 'p3',
     name: 'Hass Avocados (2)',
     location: 'counter',
-    quantityLabel: 'Fruit Bowl • Suggested: Guac with Leo 🥑',
+    quantityLabel: 'Fruit Bowl • Suggested: Guac with Leo',
     expiresOn: toISODate(new Date()),
     lowStock: false,
     thumbnail: 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=200&h=200&fit=crop',
@@ -832,6 +831,10 @@ export function createDemoSnapshot(): AppSnapshot {
   const household = defaultHousehold();
   return {
     onboardingComplete: true,
+    account: {name: 'Sarah', email: 'sarah@famfeast.app', password: 'feast'},
+    signedIn: true,
+    photoStepComplete: true,
+    planChosen: true,
     household,
     members,
     currentMemberId: 'mom',
@@ -843,14 +846,14 @@ export function createDemoSnapshot(): AppSnapshot {
         id: 'n1',
         recipeId: 'honey-chicken',
         authorId: 'dad',
-        body: 'Please toss extra red chili flakes and a dash of sriracha onto my bowl after plating! 🌶️🔥',
+        body: 'Please toss extra red chili flakes and a dash of sriracha onto my bowl after plating.',
         createdAt: new Date().toISOString(),
       },
       {
         id: 'n2',
         recipeId: 'honey-chicken',
         authorId: 'maya',
-        body: 'Double the toasted sesame seeds on the slaw please! I will toss it super well. 😋🥗',
+        body: 'Double the toasted sesame seeds on the slaw please. I will toss it super well.',
         createdAt: new Date().toISOString(),
       },
     ],
@@ -866,6 +869,10 @@ export function createEmptySnapshot(): AppSnapshot {
   const days = weekDates();
   return {
     onboardingComplete: false,
+    account: null,
+    signedIn: false,
+    photoStepComplete: false,
+    planChosen: false,
     household: {
       id: 'hh_new',
       name: '',
@@ -875,11 +882,11 @@ export function createEmptySnapshot(): AppSnapshot {
       autoRotate: false,
       theme: 'regular',
       vibe: '',
-      takeoutSafeguard: false,
-      groceryBudgetSync: false,
-      kidsCookFriday: false,
       dietaryAlerts: [],
       favoritePlates: [],
+      plan: 'solo',
+      calendarSpan: 'week',
+      ownerId: '',
     },
     members: [],
     currentMemberId: '',

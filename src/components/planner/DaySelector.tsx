@@ -65,6 +65,37 @@ function DaySelectorComponent({dates, selected, onSelect}: Props) {
 
 export const DaySelector = memo(DaySelectorComponent);
 
+function MonthSelectorComponent({dates, selected, onSelect}: Props) {
+  return (
+    <View style={styles.month}>
+      {dates.map(date => {
+        const active = date === selected;
+        const today = isToday(date);
+        return (
+          <Pressable
+            key={date}
+            accessibilityRole="button"
+            accessibilityState={{selected: active}}
+            onPress={() => onSelect(date)}
+            style={[styles.monthDay, active && styles.active]}>
+            <AppText
+              variant="labelSm"
+              color={active ? colors.onPrimary : colors.onSurface}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}>
+              {formatDayNumber(date)}
+            </AppText>
+            {today ? <View style={[styles.todayMark, active && styles.todayOn]} /> : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export const MonthSelector = memo(MonthSelectorComponent);
+
 type ShiftProps = Props & {
   dinners: MealSlot[];
   members: Member[];
@@ -92,7 +123,7 @@ function ChefShiftSelectorComponent({dates, selected, onSelect, dinners, members
               {formatDayNumber(date)}
             </AppText>
             <View style={[styles.shiftAvatar, active && styles.shiftAvatarOn]}>
-              <AppText variant="labelSm">{chef?.emoji ?? chef?.avatarInitial ?? '👩'}</AppText>
+              <AppText variant="labelSm">{chef?.avatarInitial ?? ''}</AppText>
             </View>
           </Pressable>
         );
@@ -150,6 +181,21 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     backgroundColor: colors.onPrimary,
+  },
+  month: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  monthDay: {
+    width: '14.28%',
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.md,
+    paddingVertical: 4,
+  },
+  todayOn: {
+    backgroundColor: colors.primaryFixed,
   },
   shiftRow: {
     gap: 10,

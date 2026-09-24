@@ -25,4 +25,22 @@ test('randomizer scores theme and mood matches higher than mismatches', () => {
     pantryFriendlyIds: [],
   });
   expect(partyScore).toBeGreaterThan(alreadyPlanned);
+  const treatRecipe = recipes.find(item => item.id === 'loaded-nachos');
+  if (!treatRecipe) {
+    throw new Error('seed recipe missing');
+  }
+  const treat = scoreRecipe({
+    recipe: treatRecipe,
+    theme: 'regular',
+    plannedRecipeIds: [],
+    pantryFriendlyIds: [],
+    preferTreats: true,
+  });
+  const plain = scoreRecipe({
+    recipe: treatRecipe,
+    theme: 'regular',
+    plannedRecipeIds: [],
+    pantryFriendlyIds: [],
+  });
+  expect(treat).toBeGreaterThan(plain);
 });

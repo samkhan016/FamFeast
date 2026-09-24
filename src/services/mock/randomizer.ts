@@ -18,10 +18,21 @@ export function scoreRecipe(input: {
   plannedRecipeIds: string[];
   pantryFriendlyIds: string[];
   maxCookMinutes?: number;
+  occasion?: 'cheat' | 'party' | 'birthday';
+  preferTreats?: boolean;
 }): number {
   let score = 10;
   if (input.recipe.themes.includes(input.theme)) {
     score += 24;
+  }
+  if (input.occasion === 'party' && (input.recipe.themes.includes('party') || input.recipe.tags.includes('party'))) {
+    score += 20;
+  }
+  if (input.occasion === 'birthday' && (input.recipe.themes.includes('party') || input.recipe.category === 'dessert')) {
+    score += 18;
+  }
+  if ((input.occasion === 'cheat' || input.preferTreats) && (input.recipe.themes.includes('cheat') || input.recipe.tags.includes('cheat'))) {
+    score += 22;
   }
   if (input.moodId && input.recipe.moods.includes(input.moodId)) {
     score += 18;
@@ -65,7 +76,10 @@ export function pickWeighted(recipes: Recipe[], scores: number[]): Recipe {
   return recipes[recipes.length - 1];
 }
 
-export function explainMatch(recipe: Recipe, theme: WeeklyThemeId, moodId?: MoodId): string {
+export function explainMatch(recipe: Recipe, theme: WeeklyThemeId, moodId?: MoodId, preferTreats?: boolean): string {
+  if (preferTreats || theme === 'cheat') {
+    return `Eating out has been coming up, so this leans toward an easy treat: ${recipe.title}.`;
+  }
   if (moodId === 'exhausted') {
     return `Fast finish: ${recipe.cookMinutes + recipe.prepMinutes} minutes so the kitchen stays calm after a long day.`;
   }

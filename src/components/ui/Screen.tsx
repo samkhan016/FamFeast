@@ -1,12 +1,5 @@
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import {KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle} from 'react-native';
+import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
 import {colors, spacing} from '../../theme/tokens';
 
 type Props = {
@@ -20,6 +13,12 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
+const scrollProps = {
+  keyboardShouldPersistTaps: 'handled' as const,
+  keyboardDismissMode: 'on-drag' as const,
+  showsVerticalScrollIndicator: false,
+};
+
 export function Screen({
   children,
   header,
@@ -30,28 +29,42 @@ export function Screen({
   contentContainerStyle,
   style,
 }: Props) {
-  const body = scroll ? (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[padded ? styles.padded : null, contentContainerStyle]}>
-      {children}
-    </ScrollView>
-  ) : (
-    <View style={[styles.fill, padded ? styles.padded : null, contentContainerStyle]}>{children}</View>
-  );
+  const contentStyle = [padded ? styles.padded : null, contentContainerStyle];
+  const body =
+    scroll && keyboard ? (
+      <KeyboardAwareScrollView
+        style={styles.fill}
+        enableOnAndroid
+        extraScrollHeight={24}
+        contentContainerStyle={contentStyle}
+        {...scrollProps}>
+        {children}
+      </KeyboardAwareScrollView>
+    ) : scroll ? (
+      <ScrollView contentContainerStyle={contentStyle} {...scrollProps}>
+        {children}
+      </ScrollView>
+    ) : (
+      <View style={[styles.fill, padded ? styles.padded : null, contentContainerStyle]}>{children}</View>
+    );
 
   return (
     <View style={[styles.screen, style]}>
       {header}
-      <KeyboardAvoidingView
-        enabled={keyboard}
-        style={styles.fill}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {body}
-        {footer}
-      </KeyboardAvoidingView>
+      {keyboard && scroll ? (
+        <View style={styles.fill}>
+          {body}
+          {footer}
+        </View>
+      ) : (
+        <KeyboardAvoidingView
+          enabled={keyboard}
+          style={styles.fill}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {body}
+          {footer}
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 }

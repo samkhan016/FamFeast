@@ -8,7 +8,6 @@ import {MealEditorScreen} from '../../screens/MealEditorScreen';
 import {AddRecipeScreen} from '../../screens/AddRecipeScreen';
 import {AddMemberScreen} from '../../screens/AddMemberScreen';
 import {ProfileScreen} from '../../screens/ProfileScreen';
-import {CookbookScreen} from '../../screens/CookbookScreen';
 import type {RootStackParamList} from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,7 +46,6 @@ export function AppStack({onboarded}: {onboarded: boolean}) {
             <Stack.Screen name="AddRecipe" component={AddRecipeScreen} />
             <Stack.Screen name="AddMember" component={AddMemberScreen} />
             <Stack.Screen name="HouseholdShare" component={ProfileScreen} />
-            <Stack.Screen name="Cookbook" component={CookbookScreen} />
           </>
         ) : (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

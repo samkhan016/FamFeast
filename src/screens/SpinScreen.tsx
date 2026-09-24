@@ -3,7 +3,6 @@ import {Pressable, ScrollView, StyleSheet, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {
   ArrowSquareOut,
-  BatteryCharging,
   CheckCircle,
   DiceFive,
   Lightning,
@@ -15,18 +14,14 @@ import {
 } from 'phosphor-react-native';
 import {colors, radii, spacing} from '../theme/tokens';
 import {SPIN_THEMES} from '../theme/weeklyThemes';
-import {MOODS} from '../services';
 import {AppText, CachedImage, Card, ScreenHeader, Shimmer} from '../components/ui';
 import {EmptyState} from '../components/ui';
 import {usePlanMutations, useRecipes, useSpinMutation, useWeeklyPlan} from '../hooks/useFamFeast';
 import {useAppStore} from '../store/useAppStore';
 import {useReducedMotion} from '../hooks/useReducedMotion';
 import type {TabProps} from '../app/navigation/types';
-import type {MoodId} from '../domain/types';
 import type {WeeklyThemeId} from '../theme/weeklyThemes';
 import type {SpinResult} from '../services/interfaces';
-
-const SPIN_MOODS = MOODS.filter(item => ['exhausted', 'celebrate', 'sweet', 'comfort'].includes(item.id));
 
 export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
   const planQuery = useWeeklyPlan();
@@ -43,7 +38,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
   const plan = planQuery.data ?? snapshot.plan;
   const recipes = recipesQuery.data ?? snapshot.recipes;
   const [theme, setTheme] = useState<WeeklyThemeId>(plan.theme === 'regular' || plan.theme === 'comfort' ? 'party' : plan.theme);
-  const [moodId, setMoodId] = useState<MoodId>(plan.moodId && SPIN_MOODS.some(item => item.id === plan.moodId) ? plan.moodId : 'celebrate');
+  const moodId = plan.moodId ?? 'celebrate';
   const [result, setResult] = useState<SpinResult | undefined>();
   const [locked, setLocked] = useState(false);
 
@@ -59,10 +54,18 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
   );
 
   const shown = result?.recipe ?? recipes.find(recipe => recipe.id === 'teriyaki-salmon') ?? recipes[0];
-  const energy = MOODS.find(item => item.id === moodId);
 
   const runSpin = async (nextTheme = theme, nextMood = moodId) => {
-    const spun = await spin.mutateAsync({theme: nextTheme, moodId: nextMood, date: selectedDate, mealType: 'dinner'});
+    const dinner = snapshot.plan.slots.find(slot => slot.date === selectedDate && slot.mealType === 'dinner');
+    const outings = snapshot.plan.slots.filter(slot => slot.mealType === 'dinner' && slot.status === 'eatingOut').length;
+    const spun = await spin.mutateAsync({
+      theme: nextTheme,
+      moodId: nextMood,
+      date: selectedDate,
+      mealType: 'dinner',
+      occasion: dinner?.occasion,
+      preferTreats: outings >= 2 || dinner?.status === 'eatingOut',
+    });
     setResult(spun);
     setLocked(false);
   };
@@ -97,7 +100,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
               1. Pick This Week's Vibe
             </AppText>
             <AppText variant="labelSm" color={colors.primary} style={styles.semibold} numberOfLines={1}>
-              Swipe vibes 👉
+              Swipe vibes
             </AppText>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themeRow} style={styles.themeBleed}>
@@ -112,11 +115,10 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
                       planMutations.setTheme(item.id);
                     }
                     if (recipes.length) {
-                      runSpin(item.id, moodId);
+                      runSpin(item.id);
                     }
                   }}
                   style={[styles.themePill, selected ? styles.themeOn : styles.themeOff]}>
-                  <AppText>{item.emoji}</AppText>
                   <AppText variant="labelMd" color={selected ? colors.onPrimary : colors.onSurface} style={styles.bold}>
                     {item.label}
                   </AppText>
@@ -125,46 +127,6 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
             })}
           </ScrollView>
         </View>
-
-        <Card>
-          <View style={[styles.rowBetween, styles.wrap]}>
-            <View style={[styles.row, styles.flex, styles.nowrap]}>
-              <BatteryCharging size={20} color={colors.primary} />
-              <AppText variant="labelLg" style={styles.bold} numberOfLines={1}>
-                Household Energy Level
-              </AppText>
-            </View>
-            <View style={styles.energyLabel}>
-              <AppText variant="labelSm" color={colors.primary} style={styles.bold} numberOfLines={1}>
-                {energy?.energyLabel ?? 'Moderate • 25m'}
-              </AppText>
-            </View>
-          </View>
-          <View style={styles.moodGrid}>
-            {SPIN_MOODS.map(mood => {
-              const on = moodId === mood.id;
-              return (
-                <Pressable
-                  key={mood.id}
-                  onPress={() => {
-                    setMoodId(mood.id);
-                    planMutations.setMood(mood.id, mood.energyLabel);
-                  }}
-                  style={[styles.mood, on ? styles.moodOn : styles.moodOff]}>
-                  <AppText style={styles.moodEmoji}>{mood.emoji}</AppText>
-                  <View style={styles.flex}>
-                    <AppText variant="labelMd" numberOfLines={1} color={on ? colors.onPrimaryFixed : colors.onSurface} style={styles.bold}>
-                      {mood.label}
-                    </AppText>
-                    <AppText variant="labelSm" color={on ? colors.onPrimaryFixedVariant : colors.onSurfaceVariant} numberOfLines={1}>
-                      {mood.hint}
-                    </AppText>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Card>
 
         {recipes.length === 0 ? (
           <EmptyState
@@ -175,16 +137,6 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
           />
         ) : shown ? (
           <Card lifted>
-            <View style={styles.rowBetween}>
-              <View style={styles.matchPill}>
-                <AppText variant="labelMd" color={colors.secondary} style={styles.bold}>
-                  ✓  AI Match • {result?.matchPercent ?? 98}%
-                </AppText>
-              </View>
-              <AppText variant="labelSm" color={colors.onSurfaceVariant}>
-                Kitchen Roulette
-              </AppText>
-            </View>
             <View style={styles.wheel}>
               <CachedImage uri={shown.thumbnail} label={shown.title} style={styles.wheelImage} />
               <LinearGradient colors={['transparent', 'rgba(39,49,63,0.3)', 'rgba(39,49,63,0.9)']} style={styles.wheelScrim} />
@@ -193,7 +145,6 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
                   <AppText variant="headlineMd" color={colors.onPrimary} style={styles.bold} align="center" numberOfLines={2}>
                     Spinning family recipes...
                   </AppText>
-                  <AppText style={styles.spinEmojis}>🍱 ✨ 🥗 🥘</AppText>
                 </View>
               ) : null}
               <View style={styles.wheelCopy}>
@@ -201,7 +152,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
                   <View style={styles.dishTag}>
                     <AppText variant="labelSm" color={colors.onTertiary} style={styles.bold} numberOfLines={1}>
                       {result
-                        ? `${SPIN_THEMES.find(item => item.id === theme)?.label ?? 'Party'} ${SPIN_THEMES.find(item => item.id === theme)?.emoji ?? ''}`
+                        ? `${SPIN_THEMES.find(item => item.id === theme)?.label ?? 'Party'}`
                         : 'Party Finger Food'}
                     </AppText>
                   </View>
@@ -224,7 +175,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
                   Why it fits today:
                 </AppText>
                 <AppText variant="bodySm" color={colors.onSurfaceVariant}>
-                  {result?.reason ?? 'Perfect balance for busy Thursday: light yet high protein with crunchy cucumber and crispy glazed salmon!'}
+                  {result?.reason ?? 'Spin uses this week’s theme and any eating-out changes.'}
                 </AppText>
               </View>
             </View>
@@ -306,7 +257,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
                 accessibilityRole="button">
                 <CheckCircle size={18} color={colors.onSecondary} />
                 <AppText variant="labelMd" color={colors.onSecondary} style={styles.bold} numberOfLines={1}>
-                  {locked ? 'Added to Plan! 🎉' : 'Lock In Feast'}
+                  {locked ? 'Added to Plan' : 'Lock In Feast'}
                 </AppText>
               </Pressable>
             </View>
@@ -341,7 +292,7 @@ export function SpinScreen({navigation, route}: TabProps<'Spin'>) {
               <View style={styles.row}>
                 {recipe!.id === 'sheet-fajitas' ? (
                   <AppText variant="labelSm" color={colors.error}>
-                    🔥 Mom's special
+                    Mom's special
                   </AppText>
                 ) : (
                   <>

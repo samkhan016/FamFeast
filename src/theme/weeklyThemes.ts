@@ -14,7 +14,6 @@ export type WeeklyTheme = {
   label: string;
   tagline: string;
   icon: string;
-  emoji: string;
   bannerFrom: string;
   bannerVia?: string;
   bannerTo: string;
@@ -29,7 +28,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Regular Week',
     tagline: 'Calm plates, familiar favorites',
     icon: 'House',
-    emoji: '🏠',
     bannerFrom: colors.surfaceHigh,
     bannerTo: colors.surfaceContainer,
     accent: colors.primary,
@@ -41,7 +39,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Party Week',
     tagline: 'Bright flavors, family prep & casual treats',
     icon: 'Confetti',
-    emoji: '🎉',
     bannerFrom: colors.primaryContainer,
     bannerVia: colors.primary,
     bannerTo: colors.tertiaryContainer,
@@ -54,7 +51,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Health Reset',
     tagline: 'Fresh, light, and garden-bright',
     icon: 'Leaf',
-    emoji: '🥑',
     bannerFrom: colors.secondary,
     bannerTo: '#0F8A42',
     accent: colors.secondaryContainer,
@@ -66,7 +62,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Comfort Food',
     tagline: 'Warm, cozy, and hearty',
     icon: 'BowlSteam',
-    emoji: '🍲',
     bannerFrom: colors.tertiary,
     bannerTo: colors.tertiaryContainer,
     accent: colors.tertiaryFixed,
@@ -78,7 +73,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Cheat Weekend',
     tagline: 'Treat nights and celebration bites',
     icon: 'Pizza',
-    emoji: '🍕',
     bannerFrom: '#9A3412',
     bannerTo: colors.primary,
     accent: colors.tertiaryFixedDim,
@@ -90,7 +84,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: '20-Min Fast',
     tagline: 'Low-effort dinners after packed days',
     icon: 'Lightning',
-    emoji: '⚡️',
     bannerFrom: colors.tertiaryContainer,
     bannerTo: colors.primary,
     accent: colors.tertiaryFixed,
@@ -102,7 +95,6 @@ export const WEEKLY_THEMES: Record<WeeklyThemeId, WeeklyTheme> = {
     label: 'Budget Comfort',
     tagline: 'Cozy plates that stretch the weekly shop',
     icon: 'Coins',
-    emoji: '💰',
     bannerFrom: colors.tertiary,
     bannerTo: colors.primaryContainer,
     accent: colors.tertiaryFixed,

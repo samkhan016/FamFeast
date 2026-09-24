@@ -18,6 +18,7 @@ type AppStore = {
   currentMember: () => Member | undefined;
   permission: () => Permission;
   canEdit: () => boolean;
+  isOwner: () => boolean;
 };
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -35,6 +36,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   permission: () => get().currentMember()?.permission ?? 'viewer',
   canEdit: () => get().permission() === 'editor',
+  isOwner: () => {
+    const {snapshot} = get();
+    return Boolean(snapshot.household.ownerId) && snapshot.currentMemberId === snapshot.household.ownerId;
+  },
 }));
 
 subscribeSnapshot(snapshot => {

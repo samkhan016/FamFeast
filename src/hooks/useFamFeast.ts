@@ -117,6 +117,10 @@ export function usePlanMutations() {
     togglePrep: (taskId: string) => wrap(() => services.mealPlan.togglePrepTask(taskId)),
     lockRecipe: (input: {date: string; mealType: MealType; recipeId: string; chefId?: string}) =>
       wrap(() => services.mealPlan.lockRecipeToSlot(input), 'Locked into the weekly plan'),
+    setOccasion: (date: string, occasion?: import('../domain/types').DayOccasion) =>
+      wrap(() => services.mealPlan.setOccasion(date, occasion), occasion ? 'Day marked' : 'Day cleared'),
+    setCalendarSpan: (span: import('../domain/types').CalendarSpan) =>
+      wrap(() => services.mealPlan.setCalendarSpan(span)),
   };
 }
 
@@ -165,6 +169,41 @@ export function useHouseholdMutations() {
           toast(error.message, 'error');
           throw error;
         }),
+    signUp: (input: Parameters<typeof services.household.signUp>[0]) =>
+      services.household.signUp(input).then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    setAccountPhoto: (photoUri: string) =>
+      services.household.setAccountPhoto(photoUri).then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    skipPhotoStep: () =>
+      services.household.skipPhotoStep().then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    signIn: (input: Parameters<typeof services.household.signIn>[0]) =>
+      services.household.signIn(input).then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    choosePlan: (plan: Parameters<typeof services.household.choosePlan>[0]) =>
+      services.household.choosePlan(plan).then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    reopenPaywall: () =>
+      services.household.reopenPaywall().then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
+    createHousehold: (input: Parameters<typeof services.household.createHousehold>[0]) =>
+      services.household.createHousehold(input).then(async snapshot => {
+        await invalidate();
+        return snapshot;
+      }),
     completeOnboarding: (...args: Parameters<typeof services.household.completeOnboarding>) =>
       services.household.completeOnboarding(...args).then(async snapshot => {
         await invalidate();
@@ -212,7 +251,7 @@ export function useSuggestionMutations() {
   const invalidate = useInvalidateAll();
   const toast = useAppStore(state => state.showToast);
   return {
-    submit: (input: {title: string; youtubeUrl?: string; note?: string}) =>
+    submit: (input: Parameters<typeof services.suggestions.submit>[0]) =>
       services.suggestions
         .submit(input)
         .then(async result => {

@@ -32,6 +32,24 @@ export type MoodId =
 
 export type SuggestionStatus = 'open' | 'accepted' | 'rejected';
 
+export type HouseholdPlanId = 'solo' | 'family';
+
+export type CalendarSpan = 'week' | 'month';
+
+export type DayOccasion = 'cheat' | 'party' | 'birthday';
+
+export type SuggestionKind = 'dish' | 'plan' | 'shopping';
+
+export const PLAN_SEATS: Record<HouseholdPlanId, number> = {
+  solo: 1,
+  family: 4,
+};
+
+export const PLAN_PRICE: Record<HouseholdPlanId, string> = {
+  solo: '$5/month',
+  family: '$20/month',
+};
+
 export type PantryLocation = 'fridge' | 'freezer' | 'pantry' | 'spice' | 'counter';
 
 export type DietaryAlert = {
@@ -50,12 +68,12 @@ export type Household = {
   theme: WeeklyThemeId;
   vibe?: string;
   startedOn?: string;
-  takeoutSafeguard?: boolean;
-  groceryBudgetSync?: boolean;
-  kidsCookFriday?: boolean;
   dietaryAlerts?: DietaryAlert[];
   favoritePlates?: string[];
   marketLabel?: string;
+  plan: HouseholdPlanId;
+  calendarSpan: CalendarSpan;
+  ownerId: string;
 };
 
 export type Member = {
@@ -135,6 +153,7 @@ export type MealSlot = {
   helperId?: string;
   status: MealStatus;
   eatingOutNote?: string;
+  occasion?: DayOccasion;
 };
 
 export type PrepTask = {
@@ -167,7 +186,9 @@ export type Suggestion = {
   upVoterIds: string[];
   downVoterIds: string[];
   status: SuggestionStatus;
+  kind: SuggestionKind;
   targetDate?: string;
+  occasion?: DayOccasion;
   createdAt: string;
 };
 
@@ -202,6 +223,7 @@ export type GroceryItem = {
   voteLabel?: string;
   deskHint?: string;
   deskAction?: string;
+  pending?: boolean;
 };
 
 export type PantryItem = {
@@ -230,8 +252,19 @@ export type MoodOption = {
   maxCookMinutes?: number;
 };
 
+export type Account = {
+  name: string;
+  email: string;
+  password: string;
+  photoUri?: string;
+};
+
 export type AppSnapshot = {
   onboardingComplete: boolean;
+  account: Account | null;
+  signedIn: boolean;
+  photoStepComplete: boolean;
+  planChosen: boolean;
   household: Household;
   members: Member[];
   currentMemberId: string;

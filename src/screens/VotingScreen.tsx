@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,12 +14,12 @@ import {
   ThumbsDown,
   ThumbsUp,
   YoutubeLogo,
-  ChartLineUp,
   Check,
   PaperPlaneTilt,
   PlusCircle,
   Clock,
 } from 'phosphor-react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { colors, radii, spacing } from '../theme/tokens';
 import {
   AppText,
@@ -31,30 +29,22 @@ import {
   Shimmer,
 } from '../components/ui';
 import { EmptyState, ErrorState } from '../components/ui';
-import {
-  usePlanMutations,
-  useSuggestionMutations,
-  useSuggestions,
-} from '../hooks/useFamFeast';
+import {useSuggestionMutations, useSuggestions} from '../hooks/useFamFeast';
 import { useAppStore } from '../store/useAppStore';
-import { todayISO } from '../utils/dates';
 import type { TabProps } from '../app/navigation/types';
 
 const QUICK = [
-  { fill: 'Taco Tuesday Fiesta 🌮', label: '🌮 Street Tacos' },
-  { fill: 'Creamy Tomato Basil Gnocchi 🍝', label: '🍝 Creamy Gnocchi' },
-  { fill: 'Korean Bibimbap Bowls 🥗', label: '🥗 Bibimbap' },
+  { fill: 'Taco Tuesday Fiesta', label: 'Street Tacos' },
+  { fill: 'Creamy Tomato Basil Gnocchi', label: 'Creamy Gnocchi' },
+  { fill: 'Korean Bibimbap Bowls', label: 'Bibimbap' },
 ];
 
 export function VotingScreen({ navigation }: TabProps<'Voting'>) {
   const query = useSuggestions();
   const snapshot = useAppStore(state => state.snapshot);
+  const isOwner = useAppStore(state => state.isOwner());
   const mutations = useSuggestionMutations();
-  const planMutations = usePlanMutations();
   const [draft, setDraft] = useState('');
-  const [takeout, setTakeout] = useState<'open' | 'accepted' | 'declined'>(
-    'open',
-  );
   const suggestions = query.data ?? snapshot.suggestions;
   const votedCount = snapshot.members.filter(member =>
     suggestions.some(
@@ -98,16 +88,15 @@ export function VotingScreen({ navigation }: TabProps<'Voting'>) {
         subtitle="Voting"
         onProfile={() => navigation.navigate('HouseholdShare')}
       />
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        contentContainerStyle={styles.content}
+        enableOnAndroid
+        extraScrollHeight={24}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
           <LinearGradient
             colors={[colors.primaryFixed, colors.surfaceHigh]}
             start={{ x: 0, y: 0 }}
@@ -124,7 +113,6 @@ export function VotingScreen({ navigation }: TabProps<'Voting'>) {
                   >
                     Week {snapshot.plan.weekId.split('-W')[1] ?? '43'} Ballot
                   </AppText>
-                  <AppText style={styles.ballotEmoji}>🗳️</AppText>
                 </View>
                 <View style={[styles.row, { marginTop: 4 }]}>
                   <Clock size={14} color={colors.tertiary} />
@@ -157,7 +145,7 @@ export function VotingScreen({ navigation }: TabProps<'Voting'>) {
                     style={[styles.voter, { marginLeft: index === 0 ? 0 : -6 }]}
                   >
                     <View style={styles.voterFace}>
-                      <AppText>{member.emoji ?? member.avatarInitial}</AppText>
+                      <AppText>{member.avatarInitial}</AppText>
                     </View>
                     <View style={styles.voterCheck}>
                       <AppText style={styles.checkMark}>✓</AppText>
@@ -302,35 +290,16 @@ export function VotingScreen({ navigation }: TabProps<'Voting'>) {
                             numberOfLines={1}
                           >
                             {unanimous
-                              ? 'Unanimous ⭐'
+                              ? 'Unanimous'
                               : split
-                              ? 'Split Tie ⚔️'
+                              ? 'Split tie'
                               : top
-                              ? 'Top Contender'
-                              : 'New Idea ✨'}
+                              ? 'Top contender'
+                              : 'New idea'}
                           </AppText>
                         </View>
                       </View>
                       <View style={styles.row}>
-                        <View
-                          style={[
-                            styles.miniEmoji,
-                            {
-                              backgroundColor:
-                                item.authorId === 'leo'
-                                  ? colors.primaryFixed
-                                  : colors.surfaceContainer,
-                            },
-                          ]}
-                        >
-                          <AppText>
-                            {item.title.includes('Pizza')
-                              ? '🍕'
-                              : item.title.includes('Curry')
-                              ? '🥥'
-                              : '🍔'}
-                          </AppText>
-                        </View>
                         <AppText
                           variant="labelSm"
                           color={colors.onSurfaceVariant}
@@ -463,170 +432,35 @@ export function VotingScreen({ navigation }: TabProps<'Voting'>) {
                       </Pressable>
                     </View>
                   </View>
+                  {item.status === 'open' && isOwner ? (
+                    <View style={[styles.row, {gap: 8, marginTop: 8}]}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => mutations.decide(item.id, 'accepted')}
+                        style={[styles.toss, {flex: 1}]}>
+                        <AppText variant="labelSm" color={colors.onPrimary}>
+                          Accept
+                        </AppText>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => mutations.decide(item.id, 'rejected')}
+                        style={[styles.vote, {flex: 1}]}>
+                        <AppText variant="labelSm" color={colors.onSurface}>
+                          Decline
+                        </AppText>
+                      </Pressable>
+                    </View>
+                  ) : item.status === 'open' ? (
+                    <AppText variant="labelSm" color={colors.onSurfaceVariant} style={{marginTop: 8}}>
+                      Waiting for the household owner
+                    </AppText>
+                  ) : null}
                 </Card>
               );
             })
           )}
-
-          <Card radius="xl">
-            <View style={[styles.row, styles.flex]}>
-              <View style={styles.radarIcon}>
-                <ChartLineUp size={20} color={colors.primary} />
-              </View>
-              <View style={styles.flex}>
-                <AppText variant="headlineMd" numberOfLines={1}>
-                  Habit & Outing Radar
-                </AppText>
-                <AppText
-                  variant="labelSm"
-                  color={colors.primary}
-                  style={styles.bold}
-                  numberOfLines={1}
-                >
-                  Thursday Takeout Alert 🚗
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.radarBox}>
-              <AppText variant="bodySm">
-                You've ordered takeout{' '}
-                <AppText
-                  variant="bodySm"
-                  color={colors.primary}
-                  style={styles.bold}
-                >
-                  3 out of the last 4 Thursdays
-                </AppText>
-                . Shift home cooking to Sunday and claim Thursday as family
-                takeout recharge?
-              </AppText>
-              <View style={styles.historyRow}>
-                {(
-                  [
-                    ['Oct 5', '🥡', 'Thai', true],
-                    ['Oct 12', '🍕', 'Pizza', true],
-                    ['Oct 19', '🍳', 'Cooked', false],
-                    ['Oct 26', '🍣', 'Sushi', true],
-                  ] as const
-                ).map(([date, emoji, label, out]) => (
-                  <View key={date} style={styles.histItem}>
-                    <AppText style={styles.tiny} color={colors.outline}>
-                      {date}
-                    </AppText>
-                    <View
-                      style={[
-                        styles.histDot,
-                        out ? styles.histOut : styles.histHome,
-                      ]}
-                    >
-                      <AppText style={styles.tiny}>{emoji}</AppText>
-                    </View>
-                    <AppText
-                      style={styles.tiny}
-                      color={out ? colors.onSurface : colors.outline}
-                    >
-                      {label}
-                    </AppText>
-                  </View>
-                ))}
-              </View>
-            </View>
-            {takeout === 'open' ? (
-              <View style={styles.takeoutBtns}>
-                <Pressable
-                  style={styles.takeoutYes}
-                  onPress={() => {
-                    const thursday =
-                      snapshot.plan.slots.filter(
-                        slot => slot.mealType === 'dinner',
-                      )[3]?.date ?? todayISO();
-                    planMutations.markEatingOut(thursday);
-                    setTakeout('accepted');
-                  }}
-                >
-                  <AppText
-                    variant="labelMd"
-                    color={colors.onPrimary}
-                    style={styles.bold}
-                    numberOfLines={2}
-                  >
-                    🛵 Yes, make Thursday Takeout Night
-                  </AppText>
-                </Pressable>
-                <Pressable
-                  style={styles.takeoutNo}
-                  onPress={() => setTakeout('declined')}
-                >
-                  <AppText variant="labelMd">Keep Cooking Schedule</AppText>
-                </Pressable>
-              </View>
-            ) : (
-              <View
-                style={[
-                  styles.takeoutResult,
-                  takeout === 'accepted'
-                    ? styles.takeoutYesResult
-                    : styles.takeoutNoResult,
-                ]}
-              >
-                <AppText
-                  variant="labelMd"
-                  color={
-                    takeout === 'accepted'
-                      ? colors.onSecondaryContainer
-                      : colors.onSurfaceVariant
-                  }
-                >
-                  {takeout === 'accepted'
-                    ? 'Set! Thursday is now Official Takeout Night 🍕🛵'
-                    : 'Kept on schedule! Home cooking locked for Thursday.'}
-                </AppText>
-              </View>
-            )}
-          </Card>
-
-          <Card radius="xl">
-            <View style={styles.rowBetween}>
-              <AppText variant="labelMd" style={styles.bold}>
-                Household Engagement
-              </AppText>
-              <AppText
-                variant="labelSm"
-                color={colors.secondary}
-                style={styles.bold}
-              >
-                100% Turnout
-              </AppText>
-            </View>
-            <View style={styles.engageGrid}>
-              {snapshot.members.map(member => (
-                <View key={member.id} style={styles.engageCard}>
-                  <View
-                    style={[
-                      styles.engageFace,
-                      { backgroundColor: member.avatarColor },
-                    ]}
-                  >
-                    <AppText>{member.emoji ?? member.avatarInitial}</AppText>
-                  </View>
-                  <View>
-                    <AppText
-                      variant="labelSm"
-                      style={styles.bold}
-                      numberOfLines={1}
-                    >
-                      {member.name}
-                    </AppText>
-                    <AppText style={styles.tiny} color={colors.secondary}>
-                      ✓ Voted
-                    </AppText>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </Card>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

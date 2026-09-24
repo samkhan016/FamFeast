@@ -82,7 +82,6 @@ export function MealEditorScreen({navigation, route}: RootProps<'MealEditor'>) {
             </View>
           </Card>
         ))}
-        <AppButton label="Browse cookbook" variant="ghost" onPress={() => navigation.navigate('Cookbook')} />
     </Screen>
   );
 }

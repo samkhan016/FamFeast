@@ -1,8 +1,7 @@
 import {Pressable, ScrollView, StyleSheet, View} from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
-import {ArrowsClockwise, Check, CookingPot, Plus, Shuffle, SlidersHorizontal, CaretRight} from 'phosphor-react-native';
+import {ArrowsClockwise, CookingPot, Plus, Shuffle, CaretRight} from 'phosphor-react-native';
 import {colors, radii, spacing} from '../theme/tokens';
-import {AppSwitch, AppText, Avatar, Card, Chip, EmptyState, ErrorState, ScreenHeader, Shimmer} from '../components/ui';
+import {AppSwitch, AppText, Avatar, Card, EmptyState, ErrorState, ScreenHeader, Shimmer} from '../components/ui';
 import {ChefShiftSelector} from '../components/planner/DaySelector';
 import {useHouseholdMutations, useMembers, usePlanMutations, useWeeklyPlan} from '../hooks/useFamFeast';
 import {useAppStore} from '../store/useAppStore';
@@ -26,7 +25,6 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
   const dinners = plan.slots.filter(slot => slot.mealType === 'dinner');
   const dinner = dinners.find(slot => slot.date === selectedDate);
   const tonightChef = members.find(member => member.id === dinner?.chefId);
-  const recipe = snapshot.recipes.find(item => item.id === dinner?.recipeId);
   const weekNum = plan.weekId.split('-W')[1] ?? '';
 
   if (planQuery.isLoading && membersQuery.isLoading && !members.length) {
@@ -60,29 +58,16 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
           <View style={[styles.bannerTop, styles.wrap]}>
             <View style={styles.weekPill}>
               <AppText variant="labelSm" color={colors.primary} style={styles.weekCaps} numberOfLines={1}>
-                📅  Kitchen Roster • Week {weekNum}
+                Kitchen Roster • Week {weekNum}
               </AppText>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Roster Rules"
-              onPress={() => navigation.navigate('HouseholdShare')}
-              style={styles.tune}>
-              <SlidersHorizontal size={18} color={colors.onSurface} />
-            </Pressable>
           </View>
           <AppText variant="bodySm" color={colors.onPrimaryFixed} style={styles.rule}>
             Active House Rule:{' '}
             <AppText variant="labelMd" color={colors.onPrimaryFixed}>
-              {snapshot.household.houseRule || 'Add a house rule from Household.'}
+              {snapshot.household.houseRule || 'Assign who cooks each day.'}
             </AppText>
           </AppText>
-          <View style={styles.balanceRow}>
-            <View style={styles.liveDot} />
-            <AppText variant="labelSm" color={colors.onPrimaryFixedVariant}>
-              Roster is fully balanced for 4 dinners!
-            </AppText>
-          </View>
         </View>
 
         <View>
@@ -148,49 +133,6 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
           </View>
         </View>
 
-        <Card radius="xl">
-          <View style={[styles.rowBetween, styles.wrap]}>
-            <View style={[styles.row, styles.flex, styles.nowrap]}>
-              <CookingPot size={22} color={colors.secondary} weight="fill" />
-              <AppText variant="headlineMd" style={styles.flex} numberOfLines={2}>
-                Tonight’s Prep: {tonightChef?.name ?? 'Unassigned'}
-              </AppText>
-            </View>
-            <Chip label="In Progress" tone="secondary" />
-          </View>
-          <AppText variant="bodySm" color={colors.onSurfaceVariant} style={styles.prepCopy}>
-            Dinner:{' '}
-            <AppText variant="labelMd">
-              {recipe?.title ?? 'Pick a dish'}
-            </AppText>
-            {recipe ? ` (Prep time: ${recipe.prepMinutes} mins)` : ''}
-          </AppText>
-          {plan.prepTasks.length === 0 ? (
-            <AppText variant="bodySm" color={colors.onSurfaceVariant}>
-              No prep checklist for this slot yet.
-            </AppText>
-          ) : (
-            plan.prepTasks.map(task => (
-              <Pressable
-                key={task.id}
-                onPress={() => planMutations.togglePrep(task.id)}
-                style={styles.task}
-                accessibilityRole="checkbox"
-                accessibilityState={{checked: task.done}}>
-                <View style={[styles.box, task.done && styles.boxOn]}>
-                  <Check size={16} color={task.done ? colors.onSecondary : colors.surfaceHighest} />
-                </View>
-                <AppText variant="bodyMd" style={[styles.taskLabel, task.done ? styles.strike : undefined]} numberOfLines={3}>
-                  {task.label}
-                </AppText>
-                <AppText variant="labelSm" color={task.done ? colors.secondary : colors.tertiary} style={task.done ? styles.doneCopy : undefined}>
-                  {task.done ? 'Done' : `${task.minutes} min`}
-                </AppText>
-              </Pressable>
-            ))
-          )}
-        </Card>
-
         <View style={[styles.rowBetween, styles.wrap]}>
           <AppText variant="headlineMd" numberOfLines={1} style={styles.flex}>
             Family Chef Profiles
@@ -229,9 +171,6 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
                 <View style={styles.chefTop}>
                   <View>
                     <Avatar member={member} size={64} />
-                    <View style={[styles.emojiBadge, {backgroundColor: member.helper ? colors.secondary : colors.primary}]}>
-                      <AppText variant="labelSm">{member.id === 'mom' ? '🍳' : member.id === 'dad' ? '🥩' : member.id === 'leo' ? '🌮' : '🧁'}</AppText>
-                    </View>
                   </View>
                   <View style={styles.flex}>
                     <View style={[styles.rowBetween, styles.wrap]}>
@@ -247,45 +186,12 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
                         </AppText>
                       </View>
                     </View>
-                    <AppText variant="labelMd" color={member.id === 'dad' ? colors.secondary : member.id === 'leo' ? colors.tertiary : colors.primary} style={styles.badgeCopy}>
-                      {member.badge} {member.id === 'mom' ? '👩‍🍳' : member.id === 'dad' ? '🥩' : member.id === 'leo' ? '🌮' : '🧁'}
+                    <AppText variant="labelMd" color={colors.onSurfaceVariant} style={styles.badgeCopy} numberOfLines={1}>
+                      {member.specialty}
                     </AppText>
-                    <View style={[styles.row, styles.wrap]}>
-                      <View style={styles.metaPill}>
-                        <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={1}>
-                          {member.id === 'mom'
-                            ? '🥘 3 meals this week'
-                            : member.id === 'dad'
-                              ? '🔥 2 meals this week'
-                              : member.id === 'leo'
-                                ? '🥑 1 meal (Taco Tuesday)'
-                                : '🥗 Veggie Sprinkler'}
-                        </AppText>
-                      </View>
-                      <View style={[styles.metaPill, {backgroundColor: member.helper ? colors.tertiaryFixed : colors.secondaryContainer}]}>
-                        <AppText variant="labelSm" color={member.helper ? colors.tertiary : colors.secondary} style={styles.metaBold} numberOfLines={1}>
-                          {member.id === 'mom'
-                            ? 'Top: Slow Cooker Pot Roast'
-                            : member.id === 'dad'
-                              ? 'Sunday Pancakes & Ribs'
-                              : member.id === 'maya'
-                                ? 'Specialty: Berry Parfaits'
-                                : member.specialty}
-                        </AppText>
-                      </View>
-                    </View>
                   </View>
                 </View>
                 <View style={styles.footer}>
-                  <AppText variant="bodySm" color={colors.onSurfaceVariant} style={styles.footerCopy} numberOfLines={2}>
-                    {member.id === 'dad'
-                      ? 'Locked: Always Weekend BBQ Chef'
-                      : member.id === 'leo'
-                        ? 'Earned Chef Badge: Knife Safety Level 2'
-                        : member.helper
-                          ? 'Table setting streak: 5 days in a row!'
-                          : `Specialty: ${member.specialty}`}
-                  </AppText>
                   <Pressable
                     onPress={() =>
                       canEdit
@@ -303,35 +209,6 @@ export function ChefsScreen({navigation}: TabProps<'Chefs'>) {
             );
           })
         )}
-
-        <LinearGradient colors={[colors.primaryContainer, colors.primary]} start={{x: 0, y: 0.5}} end={{x: 1, y: 0.5}} style={styles.cookoff}>
-          <View style={[styles.row, styles.flex, styles.nowrap]}>
-            <View style={styles.cookoffIcon}>
-              <AppText variant="headlineMd">🎉</AppText>
-            </View>
-            <View style={styles.flex}>
-              <AppText variant="labelLg" color={colors.onPrimary} style={styles.cookoffTitle} numberOfLines={1}>
-                Family Cook-off Friday?
-              </AppText>
-              <AppText variant="bodySm" color={colors.primaryFixed} numberOfLines={2}>
-                Maya & Leo challenge Dad on homemade pizza!
-              </AppText>
-            </View>
-          </View>
-          <Pressable
-            onPress={() => {
-              const friday = dates[4];
-              if (friday) {
-                setSelectedDate(friday);
-                navigation.navigate('MealEditor', {date: friday, mealType: 'dinner'});
-              }
-            }}
-            style={styles.scheduleBtn}>
-            <AppText variant="labelMd" color={colors.primary} style={styles.cookoffTitle}>
-              Schedule
-            </AppText>
-          </Pressable>
-        </LinearGradient>
       </ScrollView>
     </View>
   );

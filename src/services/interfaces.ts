@@ -4,6 +4,9 @@ import type {
   GroceryItem,
   Household,
   MealSlot,
+  CalendarSpan,
+  DayOccasion,
+  HouseholdPlanId,
   MealType,
   Member,
   MoodId,
@@ -21,6 +24,8 @@ export type SpinInput = {
   moodId?: MoodId;
   date: string;
   mealType?: MealType;
+  occasion?: DayOccasion;
+  preferTreats?: boolean;
 };
 
 export type SpinResult = {
@@ -37,6 +42,7 @@ export interface HouseholdService {
     householdName: string;
     members: Array<Pick<Member, 'name' | 'role' | 'permission' | 'specialty'>>;
     theme: WeeklyThemeId;
+    plan?: HouseholdPlanId;
     useDemo?: boolean;
   }): Promise<AppSnapshot>;
   getHousehold(): Promise<Household>;
@@ -47,6 +53,13 @@ export interface HouseholdService {
   removeMember(id: string): Promise<void>;
   setCurrentMember(id: string): Promise<Member>;
   currentPermission(): Permission;
+  signUp(input: {name: string; email: string; password: string; photoUri?: string}): Promise<AppSnapshot>;
+  setAccountPhoto(photoUri: string): Promise<AppSnapshot>;
+  skipPhotoStep(): Promise<AppSnapshot>;
+  signIn(input: {email: string; password: string}): Promise<AppSnapshot>;
+  choosePlan(plan: HouseholdPlanId): Promise<AppSnapshot>;
+  reopenPaywall(): Promise<AppSnapshot>;
+  createHousehold(input: {householdName: string; memberName: string; role: Member['role']}): Promise<AppSnapshot>;
   signOut(): Promise<void>;
 }
 
@@ -61,6 +74,8 @@ export interface MealPlanService {
   restoreHomeCook(date: string): Promise<WeeklyPlan>;
   togglePrepTask(taskId: string): Promise<WeeklyPlan>;
   lockRecipeToSlot(input: {date: string; mealType: MealType; recipeId: string; chefId?: string}): Promise<WeeklyPlan>;
+  setOccasion(date: string, occasion?: DayOccasion): Promise<WeeklyPlan>;
+  setCalendarSpan(span: CalendarSpan): Promise<WeeklyPlan>;
 }
 
 export interface RecipeService {
@@ -75,7 +90,14 @@ export interface RecipeService {
 
 export interface SuggestionService {
   list(): Promise<Suggestion[]>;
-  submit(input: {title: string; youtubeUrl?: string; note?: string}): Promise<Suggestion>;
+  submit(input: {
+    title: string;
+    youtubeUrl?: string;
+    note?: string;
+    kind?: Suggestion['kind'];
+    targetDate?: string;
+    occasion?: DayOccasion;
+  }): Promise<Suggestion>;
   vote(id: string, direction: 'up' | 'down'): Promise<Suggestion>;
   decide(id: string, status: 'accepted' | 'rejected'): Promise<Suggestion>;
 }
@@ -83,9 +105,16 @@ export interface SuggestionService {
 export interface GroceryService {
   listGrocery(): Promise<GroceryItem[]>;
   addGrocery(name: string, meta?: Partial<GroceryItem>): Promise<GroceryItem>;
+  updateGrocery(id: string, patch: Pick<GroceryItem, 'name' | 'quantity'>): Promise<GroceryItem>;
+  removeGrocery(id: string): Promise<void>;
   toggleGrocery(id: string): Promise<GroceryItem>;
+  decideGrocery(id: string, status: 'accepted' | 'rejected'): Promise<GroceryItem[]>;
   syncFromPlan(): Promise<GroceryItem[]>;
   listPantry(): Promise<PantryItem[]>;
+  addPantry(name: string, quantity?: string): Promise<PantryItem>;
+  updatePantry(id: string, patch: {name: string; quantity?: string}): Promise<PantryItem>;
+  removePantry(id: string): Promise<void>;
+  completeShopping(): Promise<void>;
   usePantryItemTonight(itemId: string): Promise<WeeklyPlan | null>;
 }
 

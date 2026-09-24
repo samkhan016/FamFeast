@@ -5,7 +5,6 @@ import type {MealType} from '../../domain/types';
 
 export type GroceryStackParamList = {
   GroceryHome: undefined;
-  Pantry: undefined;
 };
 
 export type TabParamList = {
@@ -24,7 +23,6 @@ export type RootStackParamList = {
   AddRecipe: undefined;
   AddMember: {memberId?: string} | undefined;
   HouseholdShare: undefined;
-  Cookbook: undefined;
 };
 
 export type RootProps<T extends keyof RootStackParamList> = NativeStackScreenProps<

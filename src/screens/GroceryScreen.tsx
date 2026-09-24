@@ -1,1141 +1,595 @@
-import { useState } from 'react';
+import {useEffect, useState} from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
-import {
-  Barcode,
-  Basket,
-  Check,
-  Heart,
-  Microphone,
-  Package,
-  PlusCircle,
-  Warning,
-  CalendarBlank,
-  Hourglass,
-  ForkKnife,
-  Signpost,
-} from 'phosphor-react-native';
-import { colors, radii, spacing } from '../theme/tokens';
-import { AppText, ScreenHeader, Shimmer } from '../components/ui';
-import { EmptyState } from '../components/ui';
-import { useGrocery, usePantry } from '../hooks/useFamFeast';
-import { services } from '../services';
-import { queryClient } from '../app/queryClient';
-import { useAppStore } from '../store/useAppStore';
-import type { GroceryStackProps } from '../app/navigation/types';
-import type { GroceryItem } from '../domain/types';
+import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import Animated, {Easing, useAnimatedStyle, useSharedValue, withTiming} from 'react-native-reanimated';
+import {Check, PencilSimple, Plus, Trash} from 'phosphor-react-native';
+import {colors, fonts, hitSlop, radii, shadows, spacing} from '../theme/tokens';
+import {AppButton, AppText, EmptyState, ScreenHeader} from '../components/ui';
+import {services} from '../services';
+import {queryClient} from '../app/queryClient';
+import {useAppStore} from '../store/useAppStore';
+import type {GroceryStackProps} from '../app/navigation/types';
+import type {GroceryItem, PantryItem} from '../domain/types';
 
-const QUICK_CHIPS = [
-  '🥛 Whole Milk',
-  '🥑 Avocados',
-  '🥚 Farm Eggs',
-  '🍚 Jasmine Rice',
-];
+type ListTab = 'inventory' | 'shopping';
+type Editor = {list: ListTab; id: string} | null;
 
-export function GroceryScreen({
-  navigation,
-}: GroceryStackProps<'GroceryHome'>) {
-  const query = useGrocery();
-  const pantryQuery = usePantry();
-  const snapshot = useAppStore(state => state.snapshot);
-  const items = (query.data ?? snapshot.grocery).filter(item => !item.desk);
-  const desk = (query.data ?? snapshot.grocery).filter(item => item.desk);
-  const pantry = pantryQuery.data ?? snapshot.pantry;
-  const [draft, setDraft] = useState('');
-  const [aisleSort, setAisleSort] = useState(false);
-  const [done, setDone] = useState(false);
+const TAB_TIMING = {duration: 240, easing: Easing.out(Easing.cubic)};
+
+export function GroceryScreen({navigation}: GroceryStackProps<'GroceryHome'>) {
+  const grocery = useAppStore(state => state.snapshot.grocery);
+  const inventory = useAppStore(state => state.snapshot.pantry);
   const showToast = useAppStore(state => state.showToast);
-  const dad = snapshot.members.find(member => member.id === 'dad');
+  const shopping = grocery.filter(item => !item.desk);
+  const allBought = shopping.length > 0 && shopping.every(item => item.checked);
 
-  const list = aisleSort
-    ? [...items].sort((a, b) =>
-        (a.locationHint ?? a.aisle).localeCompare(b.locationHint ?? b.aisle),
-      )
-    : items;
-  const produce = list.filter(item => item.category === 'produce');
-  const meat = list.filter(item => item.category === 'meat');
-  const aisle = list.filter(item => item.category === 'aisle');
-  const checked = items.filter(item => item.checked).length;
-  const pct = items.length ? Math.round((checked / items.length) * 100) : 0;
-  const cornstarch = pantry.find(item => item.id === 'p4');
-  const honey = pantry.find(item => item.id === 'p5');
-  const restock = [cornstarch, honey].filter(Boolean);
+  const [tab, setTab] = useState<ListTab>('shopping');
+  const progress = useSharedValue(tab === 'shopping' ? 1 : 0);
+  const trackWidth = useSharedValue(0);
+  const pageWidth = useSharedValue(0);
+  const [inventoryDraft, setInventoryDraft] = useState('');
+  const [shoppingDraft, setShoppingDraft] = useState('');
+  const [pagerWidth, setPagerWidth] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [editing, setEditing] = useState<Editor>(null);
+  const [name, setName] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const add = async (name: string) => {
-    if (!name.trim()) {
-      return;
-    }
-    await services.grocery.addGrocery(name.trim());
-    setDraft('');
-    await queryClient.invalidateQueries({ queryKey: ['grocery'] });
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({queryKey: ['grocery']}),
+      queryClient.invalidateQueries({queryKey: ['pantry']}),
+    ]);
+
+  useEffect(() => {
+    progress.value = withTiming(tab === 'shopping' ? 1 : 0, TAB_TIMING);
+  }, [progress, tab]);
+
+  const pillStyle = useAnimatedStyle(() => {
+    const inner = Math.max(trackWidth.value - 8, 0);
+    const segment = inner / 2;
+    return {
+      width: segment,
+      transform: [{translateX: progress.value * segment}],
+    };
+  });
+
+  const pagesStyle = useAnimatedStyle(() => ({
+    transform: [{translateX: -progress.value * pageWidth.value}],
+  }));
+
+  const switchTab = (next: ListTab) => {
+    setTab(next);
   };
 
-  const toggle = async (id: string) => {
-    await services.grocery.toggleGrocery(id);
-    await queryClient.invalidateQueries({ queryKey: ['grocery'] });
+  const addInventory = async () => {
+    const next = inventoryDraft.trim();
+    if (!next) {
+      return;
+    }
+    setInventoryDraft('');
+    await services.grocery.addPantry(next);
+    showToast('Added to inventory', 'success');
+    await refresh();
+  };
+
+  const addShopping = async () => {
+    const next = shoppingDraft.trim();
+    if (!next) {
+      return;
+    }
+    setShoppingDraft('');
+    await services.grocery.addGrocery(next, {pending: false});
+    showToast('Added to the shopping list', 'success');
+    await refresh();
+  };
+
+  const createList = async () => {
+    setCreating(true);
+    try {
+      const before = new Set(shopping.map(item => item.name.toLowerCase()));
+      const next = await services.grocery.syncFromPlan();
+      const added = next.filter(item => !item.desk && !before.has(item.name.toLowerCase())).length;
+      showToast(
+        added
+          ? `Added ${added} ${added === 1 ? 'ingredient' : 'ingredients'} from this week’s meals`
+          : 'This week’s meals are already on the list',
+        'success',
+      );
+      await refresh();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggle = (id: string) => {
+    void services.grocery.toggleGrocery(id);
+  };
+
+  const openShopping = (item: GroceryItem) => {
+    setEditing({list: 'shopping', id: item.id});
+    setName(item.name);
+    setQuantity(item.quantity ?? '');
+  };
+
+  const openInventory = (item: PantryItem) => {
+    setEditing({list: 'inventory', id: item.id});
+    setName(item.name);
+    setQuantity(item.quantityLabel ?? '');
+  };
+
+  const closeEdit = () => {
+    if (saving) {
+      return;
+    }
+    setEditing(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editing || !name.trim()) {
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editing.list === 'shopping') {
+        await services.grocery.updateGrocery(editing.id, {name: name.trim(), quantity: quantity.trim()});
+      } else {
+        await services.grocery.updatePantry(editing.id, {name: name.trim(), quantity: quantity.trim()});
+      }
+      setEditing(null);
+      showToast('Item updated', 'success');
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!editing) {
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editing.list === 'shopping') {
+        await services.grocery.removeGrocery(editing.id);
+        showToast('Removed from the shopping list', 'success');
+      } else {
+        await services.grocery.removePantry(editing.id);
+        showToast('Removed from inventory', 'success');
+      }
+      setEditing(null);
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const complete = async () => {
+    setCompleting(true);
+    try {
+      await services.grocery.completeShopping();
+      showToast('Added to inventory', 'success');
+      setTab('inventory');
+      await refresh();
+    } finally {
+      setCompleting(false);
+    }
   };
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader
-        subtitle="Grocery & Pantry"
-        onProfile={() => navigation.navigate('HouseholdShare')}
-      />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
-          <View style={styles.syncCard}>
-            <View style={styles.rowBetween}>
-              <View style={styles.row}>
-                <View style={styles.liveWrap}>
-                  <View style={styles.livePing} />
-                  <View style={styles.liveDot} />
-                </View>
-                <AppText
-                  variant="labelSm"
-                  color={colors.secondary}
-                  style={styles.liveCaps}
-                >
-                  Live Store Sync
-                </AppText>
-              </View>
-              <View style={styles.weekPill}>
-                <CalendarBlank size={15} color={colors.primary} />
-                <AppText variant="labelSm" color={colors.onSurfaceVariant}>
-                  Week {snapshot.plan.weekId.split('-W')[1]} Feasts
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.shopper}>
-              <View style={[styles.row, styles.flex, styles.nowrap]}>
-                <View>
-                  <View style={styles.dadFace}>
-                    <AppText>{dad?.emoji ?? '👨'}</AppText>
-                  </View>
-                  <View style={styles.cartBadge}>
-                    <Basket size={12} color={colors.onSecondary} />
-                  </View>
-                </View>
-                <View style={styles.flex}>
-                  <AppText variant="labelLg" numberOfLines={1}>
-                    Dad (Mark) is at Trader Joe’s
-                  </AppText>
-                  <AppText
-                    variant="bodySm"
-                    color={colors.onSurfaceVariant}
-                    numberOfLines={2}
-                  >
-                    {items.length - checked} items remaining • Updated 2m ago
-                  </AppText>
-                </View>
-              </View>
-              <Pressable
-                onPress={() => setAisleSort(!aisleSort)}
-                style={[styles.aisleBtn, aisleSort && styles.aisleOn]}
-                accessibilityRole="button"
-              >
-                <Signpost size={16} color={colors.onPrimary} />
-                <AppText
-                  variant="labelMd"
-                  color={colors.onPrimary}
-                  numberOfLines={1}
-                >
-                  {aisleSort ? 'Sorted 📍' : 'Aisle Sort'}
-                </AppText>
-              </Pressable>
-            </View>
-            <View style={styles.rowBetween}>
-              <View style={[styles.row, { flex: 1 }]}>
-                <ForkKnife size={14} color={colors.tertiary} />
-                <AppText
-                  variant="labelSm"
-                  color={colors.onSurfaceVariant}
-                  numberOfLines={1}
-                  style={{ flex: 1 }}
-                >
-                  Auto-synced: Crispy Chicken, Thai Curry & Detroit Pizza
-                </AppText>
-              </View>
-              <AppText
-                variant="labelSm"
-                color={colors.primary}
-                style={styles.bold}
-              >
-                3 Meals
-              </AppText>
-            </View>
+      <ScreenHeader subtitle="Grocery" onProfile={() => navigation.navigate('HouseholdShare')} />
+      <View
+        style={styles.tabs}
+        onLayout={event => {
+          trackWidth.value = event.nativeEvent.layout.width;
+        }}>
+        <Animated.View pointerEvents="none" style={[styles.pill, pillStyle]} />
+        <TabButton label="Inventory" selected={tab === 'inventory'} onPress={() => switchTab('inventory')} />
+        <TabButton label="Shopping list" selected={tab === 'shopping'} onPress={() => switchTab('shopping')} />
+      </View>
+      <View
+        style={styles.pager}
+        onLayout={event => {
+          const width = event.nativeEvent.layout.width;
+          pageWidth.value = width;
+          setPagerWidth(width);
+        }}>
+        <Animated.View style={[styles.pages, {width: pagerWidth * 2}, pagesStyle]}>
+          <View style={[styles.page, {width: pagerWidth}]}>
+            <KeyboardAwareScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.content}
+              enableOnAndroid
+              extraScrollHeight={24}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag">
+              <AddRow
+                label="Add inventory item"
+                placeholder="Add an item you have"
+                value={inventoryDraft}
+                onChangeText={setInventoryDraft}
+                onAdd={addInventory}
+              />
+              {!inventory.length ? (
+                <EmptyState title="Nothing in inventory" body="Add items you already have at home." />
+              ) : null}
+              {inventory.map(item => (
+                <StockRow key={item.id} name={item.name} quantity={item.quantityLabel} onEdit={() => openInventory(item)} />
+              ))}
+            </KeyboardAwareScrollView>
           </View>
-
-          <View style={styles.segment}>
-            <View style={styles.segmentOn}>
-              <Basket size={18} color={colors.primary} />
-              <AppText
-                variant="labelMd"
-                color={colors.primary}
-                style={styles.bold}
-                numberOfLines={1}
-              >
-                Supermarket ({items.length})
+          <View style={[styles.page, {width: pagerWidth}]}>
+            <KeyboardAwareScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.content}
+              enableOnAndroid
+              extraScrollHeight={24}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag">
+              <AppButton
+                label="Create shopping list"
+                loading={creating}
+                onPress={createList}
+                accessibilityLabel="Create shopping list from this week’s meals"
+              />
+              <AppText variant="bodySm" color={colors.onSurfaceVariant}>
+                Pulls ingredients from the meals planned this week.
               </AppText>
-            </View>
-            <Pressable
-              onPress={() => navigation.navigate('Pantry')}
-              style={styles.segmentOff}
-              accessibilityRole="button"
-            >
-              <Package size={18} color={colors.onSurfaceVariant} />
-              <AppText
-                variant="labelMd"
-                color={colors.onSurfaceVariant}
-                style={styles.bold}
-                numberOfLines={1}
-              >
-                Pantry (82%)
-              </AppText>
-            </Pressable>
+              <AddRow
+                label="Add shopping item"
+                placeholder="Add an item to buy"
+                value={shoppingDraft}
+                onChangeText={setShoppingDraft}
+                onAdd={addShopping}
+              />
+              {!shopping.length ? (
+                <EmptyState
+                  title="Nothing on the list"
+                  body="Create a shopping list from this week’s meals, or add an item above."
+                />
+              ) : null}
+              {shopping.map(item => (
+                <ShoppingRow key={item.id} item={item} onToggle={() => toggle(item.id)} onEdit={() => openShopping(item)} />
+              ))}
+            </KeyboardAwareScrollView>
+            {allBought ? (
+              <View style={styles.footer}>
+                <AppButton
+                  label="Complete shopping"
+                  loading={completing}
+                  onPress={complete}
+                  accessibilityLabel="Complete shopping and add items to inventory"
+                />
+              </View>
+            ) : null}
           </View>
+        </Animated.View>
+      </View>
 
-          <View style={styles.addCard}>
-            <View style={styles.addRow}>
-              <PlusCircle
-                size={20}
-                color={colors.onSurfaceVariant}
-                style={styles.addIcon}
+      <Modal visible={editing != null} transparent animationType="fade" onRequestClose={closeEdit}>
+        <KeyboardAvoidingView style={styles.scrim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <Pressable style={styles.scrimPress} onPress={closeEdit}>
+            <Pressable style={styles.sheet} onPress={() => undefined}>
+              <AppText variant="headlineMd">Edit item</AppText>
+              <TextInput
+                accessibilityLabel="Item name"
+                value={name}
+                onChangeText={setName}
+                placeholder="Name"
+                placeholderTextColor={colors.outline}
+                style={styles.input}
+                autoFocus
               />
               <TextInput
-                accessibilityLabel="Add grocery item"
-                value={draft}
-                onChangeText={setDraft}
-                onSubmitEditing={() => add(draft)}
-                placeholder="Add milk, honey, scallions..."
-                placeholderTextColor={colors.onSurfaceVariant}
-                style={styles.addInput}
+                accessibilityLabel="Quantity"
+                value={quantity}
+                onChangeText={setQuantity}
+                placeholder="Quantity"
+                placeholderTextColor={colors.outline}
+                style={styles.input}
               />
-              <View style={styles.addActions}>
+              <View style={styles.sheetActions}>
                 <Pressable
-                  accessibilityLabel="Voice input"
-                  style={styles.miniBtn}
-                >
-                  <Microphone size={18} color={colors.onSurfaceVariant} />
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove item"
+                  onPress={remove}
+                  disabled={saving}
+                  hitSlop={hitSlop}
+                  style={styles.remove}>
+                  <Trash size={18} color={colors.error} />
+                  <AppText variant="labelMd" color={colors.error}>
+                    Remove
+                  </AppText>
                 </Pressable>
                 <Pressable
-                  accessibilityLabel="Scan barcode"
-                  style={styles.miniBtn}
-                >
-                  <Barcode size={18} color={colors.onSurfaceVariant} />
+                  accessibilityRole="button"
+                  accessibilityLabel="Save item"
+                  onPress={saveEdit}
+                  disabled={saving || !name.trim()}
+                  style={[styles.save, (!name.trim() || saving) && styles.addBtnOff]}>
+                  <AppText variant="labelMd" color={colors.onPrimary}>
+                    Save
+                  </AppText>
                 </Pressable>
               </View>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              <AppText
-                variant="labelSm"
-                color={colors.onSurfaceVariant}
-                style={styles.bold}
-              >
-                Quick +
-              </AppText>
-              {QUICK_CHIPS.map(chip => (
-                <Pressable
-                  key={chip}
-                  onPress={() => setDraft(chip.replace(/^[^\s]+\s/, ''))}
-                  style={styles.quickChip}
-                >
-                  <AppText variant="labelSm">+ {chip}</AppText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-
-          <View style={styles.craving}>
-            <View style={[styles.rowBetween, styles.wrap]}>
-              <View style={[styles.row, styles.flex, styles.wrap]}>
-                <Heart size={20} color={colors.tertiary} />
-                <AppText
-                  variant="headlineMd"
-                  style={styles.bold}
-                  numberOfLines={1}
-                >
-                  Family Craving Desk
-                </AppText>
-              </View>
-              <View style={styles.pinned}>
-                <AppText
-                  variant="labelSm"
-                  color={colors.tertiary}
-                  style={styles.bold}
-                >
-                  {desk.length} Pinned
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.craveGrid}>
-              {desk.map(item => (
-                <View key={item.id} style={styles.craveCard}>
-                  <View style={styles.rowBetween}>
-                    <View
-                      style={[
-                        styles.craveFace,
-                        {
-                          backgroundColor:
-                            item.requestedBy === 'maya'
-                              ? colors.secondaryFixed
-                              : item.requestedBy === 'leo'
-                              ? colors.tertiaryFixed
-                              : colors.primaryFixed,
-                        },
-                      ]}
-                    >
-                      <AppText>
-                        {item.requestedBy === 'maya'
-                          ? '👧'
-                          : item.requestedBy === 'leo'
-                          ? '👦'
-                          : '👨'}
-                      </AppText>
-                    </View>
-                    <AppText
-                      variant="labelSm"
-                      color={
-                        item.urgent
-                          ? colors.tertiary
-                          : item.checked
-                          ? colors.secondary
-                          : colors.primary
-                      }
-                      style={styles.bold}
-                    >
-                      {item.voteLabel}
-                    </AppText>
-                  </View>
-                  <AppText
-                    variant="labelMd"
-                    style={styles.bold}
-                    numberOfLines={2}
-                  >
-                    {item.name}
-                  </AppText>
-                  <AppText
-                    variant="labelSm"
-                    color={colors.onSurfaceVariant}
-                    numberOfLines={1}
-                  >
-                    {item.deskHint}
-                  </AppText>
-                  <Pressable
-                    onPress={() => toggle(item.id)}
-                    style={[
-                      styles.craveBtn,
-                      item.deskAction === 'In Cart'
-                        ? styles.cravePrimary
-                        : item.deskAction === 'Add $4.20'
-                        ? styles.craveGreen
-                        : styles.craveNeutral,
-                    ]}
-                  >
-                    <AppText
-                      variant="labelSm"
-                      color={
-                        item.deskAction === 'Add $4.20'
-                          ? colors.onSecondaryContainer
-                          : item.deskAction === '+ Add'
-                          ? colors.onSurface
-                          : colors.onPrimary
-                      }
-                      style={styles.bold}
-                    >
-                      {item.deskAction}
-                    </AppText>
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.restock}>
-            <View style={[styles.rowBetween, styles.wrap]}>
-              <View style={[styles.row, styles.flex]}>
-                <View style={styles.alertIcon}>
-                  <Warning size={18} color={colors.primary} />
-                </View>
-                <View style={styles.flex}>
-                  <AppText
-                    variant="headlineMd"
-                    style={styles.bold}
-                    numberOfLines={2}
-                  >
-                    Pantry Restock & Expiry
-                  </AppText>
-                  <AppText
-                    variant="labelSm"
-                    color={colors.onSurfaceVariant}
-                    numberOfLines={1}
-                  >
-                    Avoid dinner-prep surprises
-                  </AppText>
-                </View>
-              </View>
-              <View style={styles.critical}>
-                <AppText
-                  variant="labelSm"
-                  color={colors.primary}
-                  style={styles.bold}
-                >
-                  {restock.length} Critical
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.lowGrid}>
-              {restock.map(item => (
-                <View key={item!.id} style={styles.lowCard}>
-                  <View style={styles.rowBetween}>
-                    <AppText variant="labelMd" style={styles.bold}>
-                      {item!.name}
-                    </AppText>
-                    <AppText
-                      variant="labelSm"
-                      color={
-                        item!.percentLeft === 10
-                          ? colors.error
-                          : colors.tertiary
-                      }
-                      style={styles.bold}
-                    >
-                      {item!.percentLeft}% left
-                    </AppText>
-                  </View>
-                  <View style={styles.barTrack}>
-                    <View
-                      style={[
-                        styles.barFill,
-                        {
-                          width: `${item!.percentLeft ?? 10}%`,
-                          backgroundColor:
-                            (item!.percentLeft ?? 10) <= 10
-                              ? colors.error
-                              : colors.tertiary,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.rowBetween}>
-                    <AppText variant="labelSm" color={colors.onSurfaceVariant}>
-                      {item!.id === 'p4' ? 'Needed for Wed' : 'Glaze recipe'}
-                    </AppText>
-                    <Pressable
-                      onPress={() => add(item!.name)}
-                      style={styles.listBtn}
-                    >
-                      <AppText
-                        variant="labelSm"
-                        color={colors.onPrimary}
-                        style={styles.bold}
-                      >
-                        + List
-                      </AppText>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-            <View style={styles.waste}>
-              <View style={[styles.row, styles.flex]}>
-                <Hourglass size={20} color={colors.secondary} />
-                <AppText
-                  variant="bodySm"
-                  numberOfLines={2}
-                  color={colors.onSecondaryContainer}
-                  style={styles.flex}
-                >
-                  <AppText
-                    variant="bodySm"
-                    color={colors.onSecondaryContainer}
-                    style={styles.bold}
-                  >
-                    Heavy Cream
-                  </AppText>{' '}
-                  expires in 2 days!
-                </AppText>
-              </View>
-              <Pressable
-                onPress={() => navigation.navigate('Schedule')}
-                style={styles.planBtn}
-              >
-                <AppText
-                  variant="labelSm"
-                  color={colors.secondary}
-                  style={styles.bold}
-                >
-                  Plan Tomato Pasta
-                </AppText>
-              </Pressable>
-            </View>
-          </View>
-
-          {query.isLoading && !items.length ? (
-            <Shimmer height={200} radius={24} />
-          ) : null}
-          {items.length === 0 ? (
-            <EmptyState
-              title="List is empty"
-              body="Add a craving or sync ingredients from planned meals."
-            />
-          ) : (
-            <>
-              <CategoryBlock
-                title="Fresh Produce & Herbs"
-                subtitle="Trader Joe’s • Dept 1"
-                icon="🥬"
-                items={produce}
-                badge={`${produce.filter(i => i.checked).length} of ${
-                  produce.length
-                } bought`}
-                onToggle={toggle}
-                members={snapshot.members}
-              />
-              <CategoryBlock
-                title="Poultry & Meats"
-                subtitle="Butcher Counter • Back Wall"
-                icon="🍗"
-                items={meat}
-                badge="1 Urgent"
-                urgent
-                onToggle={toggle}
-                members={snapshot.members}
-              />
-              <CategoryBlock
-                title="Aisles & Sauces"
-                subtitle="Aisle 3 & 4 (International)"
-                icon="🍜"
-                iconBg={colors.tertiaryFixed}
-                items={aisle}
-                badge={`${aisle.filter(i => i.checked).length} of ${
-                  aisle.length
-                } bought`}
-                onToggle={toggle}
-                members={snapshot.members}
-              />
-            </>
-          )}
-
-          <View style={styles.tally}>
-            <View style={styles.rowBetween}>
-              <View>
-                <View style={styles.row}>
-                  <AppText variant="headlineMd" style={styles.heroTitle}>
-                    $42.50
-                  </AppText>
-                  <AppText variant="bodySm" color={colors.onSurfaceVariant}>
-                    / $65 weekly budget
-                  </AppText>
-                </View>
-                <AppText
-                  variant="labelSm"
-                  color={colors.secondary}
-                  style={styles.bold}
-                >
-                  {checked} of {items.length} items checked ({pct}%)
-                </AppText>
-              </View>
-              <View style={styles.gauge}>
-                <Svg width={44} height={44} viewBox="0 0 36 36">
-                  <Circle
-                    cx="18"
-                    cy="18"
-                    r="15.9"
-                    fill="none"
-                    stroke={colors.surfaceContainer}
-                    strokeWidth="3.5"
-                  />
-                  <Circle
-                    cx="18"
-                    cy="18"
-                    r="15.9"
-                    fill="none"
-                    stroke={colors.secondary}
-                    strokeWidth="3.5"
-                    strokeDasharray={`${pct}, 100`}
-                    strokeLinecap="round"
-                    transform="rotate(-90 18 18)"
-                  />
-                </Svg>
-                <AppText variant="labelSm" style={styles.gaugeText}>
-                  {pct}%
-                </AppText>
-              </View>
-            </View>
-            <View style={styles.barTrack}>
-              <View
-                style={[
-                  styles.barFill,
-                  {
-                    width: `${pct}%`,
-                    backgroundColor: colors.secondary,
-                    height: 8,
-                  },
-                ]}
-              />
-            </View>
-            <Pressable
-              onPress={() => {
-                setDone(true);
-                showToast('Pantry Stock Updated!', 'success');
-                setTimeout(() => setDone(false), 2200);
-              }}
-              style={[styles.finish, done && styles.finishOn]}
-            >
-              <Check size={20} color={colors.onPrimary} />
-              <AppText
-                variant="labelLg"
-                color={colors.onPrimary}
-                style={styles.bold}
-                numberOfLines={1}
-              >
-                {done
-                  ? 'Pantry Stock Updated! 🎉'
-                  : 'Finish Run & Stock Kitchen'}
-              </AppText>
             </Pressable>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
-function CategoryBlock({
-  title,
-  subtitle,
-  icon,
-  iconBg,
-  items,
-  badge,
-  urgent,
-  onToggle,
-  members,
+function AddRow({
+  label,
+  placeholder,
+  value,
+  onChangeText,
+  onAdd,
 }: {
-  title: string;
-  subtitle: string;
-  icon: string;
-  iconBg?: string;
-  items: GroceryItem[];
-  badge: string;
-  urgent?: boolean;
-  onToggle: (id: string) => void;
-  members: { id: string; emoji?: string }[];
+  label: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  onAdd: () => void;
 }) {
-  if (!items.length) {
-    return null;
-  }
   return (
-    <View style={styles.catCard}>
-      <View style={[styles.rowBetween, styles.wrap]}>
-        <View style={[styles.row, styles.flex, styles.nowrap]}>
-          <View
-            style={[
-              styles.catIcon,
-              {
-                backgroundColor:
-                  iconBg ??
-                  (urgent ? colors.primaryFixed : colors.secondaryFixed),
-              },
-            ]}
-          >
-            <AppText>{icon}</AppText>
-          </View>
-          <View style={styles.flex}>
-            <AppText variant="headlineMd" style={styles.bold} numberOfLines={1}>
-              {title}
-            </AppText>
-            <AppText
-              variant="labelSm"
-              color={colors.onSurfaceVariant}
-              numberOfLines={1}
-            >
-              {subtitle}
-            </AppText>
-          </View>
-        </View>
-        <View
-          style={[
-            styles.catBadge,
-            urgent && { backgroundColor: colors.primaryFixed },
-          ]}
-        >
-          <AppText
-            variant="labelSm"
-            color={urgent ? colors.onPrimaryFixed : colors.onSurface}
-            style={styles.bold}
-          >
-            {badge}
+    <View style={styles.addRow}>
+      <TextInput
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        onSubmitEditing={onAdd}
+        placeholder={placeholder}
+        placeholderTextColor={colors.outline}
+        returnKeyType="done"
+        style={styles.addInput}
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Add item"
+        onPress={onAdd}
+        disabled={!value.trim()}
+        style={({pressed}) => [styles.addBtn, !value.trim() && styles.addBtnOff, pressed && styles.pressed]}>
+        <Plus size={20} color={colors.onPrimary} />
+      </Pressable>
+    </View>
+  );
+}
+
+function TabButton({label, selected, onPress}: {label: string; selected: boolean; onPress: () => void}) {
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{selected}}
+      onPress={onPress}
+      style={styles.tab}>
+      <AppText variant="labelMd" color={selected ? colors.primary : colors.onSurfaceVariant} numberOfLines={1}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function StockRow({name, quantity, onEdit}: {name: string; quantity?: string; onEdit: () => void}) {
+  return (
+    <View style={styles.item}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${name}`}
+        onPress={onEdit}
+        style={styles.itemBody}>
+        <AppText variant="bodyMd" numberOfLines={2} style={styles.itemTitle}>
+          {name}
+        </AppText>
+        {quantity ? (
+          <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={1}>
+            {quantity}
           </AppText>
-        </View>
-      </View>
-      {items.map(item => {
-        const picker = members.find(member => member.id === item.pickedBy);
-        return (
-          <Pressable
-            key={item.id}
-            onPress={() => onToggle(item.id)}
-            style={[styles.item, item.checked && styles.itemOn]}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: item.checked }}
-          >
-            <View
-              style={[
-                styles.check,
-                item.checked ? styles.checkOn : styles.checkOff,
-              ]}
-            >
-              <Check
-                size={16}
-                color={item.checked ? colors.onSecondary : 'transparent'}
-              />
-            </View>
-            <View style={styles.flex}>
-              <View style={[styles.row, styles.wrap]}>
-                <AppText
-                  variant="bodyMd"
-                  style={[styles.itemTitle, item.checked && styles.strike]}
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </AppText>
-                {item.tonight ? (
-                  <View style={styles.tonight}>
-                    <AppText
-                      variant="labelSm"
-                      color={colors.onErrorContainer}
-                      style={styles.bold}
-                    >
-                      Tonight
-                    </AppText>
-                  </View>
-                ) : null}
-              </View>
-              <View style={styles.row}>
-                {item.quantity ? (
-                  <View style={styles.qty}>
-                    <AppText variant="labelSm" color={colors.onSurfaceVariant}>
-                      {item.quantity}
-                    </AppText>
-                  </View>
-                ) : null}
-                {item.recipeLabel || item.helperLabel ? (
-                  <AppText
-                    variant="labelSm"
-                    color={
-                      item.kidsTask
-                        ? colors.secondary
-                        : item.recipeLabel?.includes('Glaze')
-                        ? colors.tertiary
-                        : colors.primary
-                    }
-                    style={item.kidsTask ? styles.bold : undefined}
-                  >
-                    {item.helperLabel ?? item.recipeLabel}
-                  </AppText>
-                ) : null}
-              </View>
-            </View>
-            {item.kidsTask ? (
-              <View style={styles.kids}>
-                <AppText
-                  variant="labelSm"
-                  color={colors.onSecondaryFixed}
-                  style={styles.bold}
-                >
-                  Kids Task
-                </AppText>
-              </View>
-            ) : picker ? (
-              <View style={styles.picker}>
-                <AppText>{picker.emoji ?? '👨'}</AppText>
-              </View>
-            ) : (
-              <AppText
-                variant="labelSm"
-                color={colors.onSurfaceVariant}
-                style={styles.bold}
-              >
-                {item.priceLabel ?? item.locationHint ?? ''}
-              </AppText>
-            )}
-          </Pressable>
-        );
-      })}
+        ) : null}
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${name}`}
+        onPress={onEdit}
+        hitSlop={hitSlop}
+        style={styles.edit}>
+        <PencilSimple size={18} color={colors.onSurfaceVariant} />
+      </Pressable>
+    </View>
+  );
+}
+
+function ShoppingRow({
+  item,
+  onToggle,
+  onEdit,
+}: {
+  item: GroceryItem;
+  onToggle: () => void;
+  onEdit: () => void;
+}) {
+  const [checked, setChecked] = useState(item.checked);
+
+  useEffect(() => {
+    setChecked(item.checked);
+  }, [item.checked]);
+
+  return (
+    <View style={[styles.item, checked && styles.itemOn]}>
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityLabel={item.name}
+        accessibilityState={{checked}}
+        onPress={() => {
+          setChecked(value => !value);
+          onToggle();
+        }}
+        hitSlop={hitSlop}
+        style={[styles.check, checked ? styles.checkOn : styles.checkOff]}>
+        <Check size={16} color={checked ? colors.onSecondary : 'transparent'} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${item.name}`}
+        onPress={onEdit}
+        style={styles.itemBody}>
+        <AppText variant="bodyMd" numberOfLines={2} style={[styles.itemTitle, checked && styles.strike]}>
+          {item.name}
+        </AppText>
+        {item.quantity ? (
+          <AppText variant="labelSm" color={colors.onSurfaceVariant} numberOfLines={1}>
+            {item.quantity}
+          </AppText>
+        ) : null}
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${item.name}`}
+        onPress={onEdit}
+        hitSlop={hitSlop}
+        style={styles.edit}>
+        <PencilSimple size={18} color={colors.onSurfaceVariant} />
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.surface },
-  content: { padding: spacing.margin, gap: spacing.md, paddingBottom: 120 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  rowBetween: {
+  screen: {flex: 1, backgroundColor: colors.surface},
+  flex: {flex: 1},
+  tabs: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-    minWidth: 0,
-  },
-  flex: { flex: 1, minWidth: 0 },
-  nowrap: { flexWrap: 'nowrap' },
-  wrap: { flexWrap: 'wrap' },
-  bold: { fontFamily: 'PlusJakartaSans-Bold' },
-  heroTitle: { fontFamily: 'PlusJakartaSans-ExtraBold' },
-  syncCard: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radii.card,
-    padding: spacing.md,
-    gap: 8,
-  },
-  liveWrap: {
-    width: 12,
-    height: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  livePing: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.secondary,
-    opacity: 0.35,
-  },
-  liveDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.secondary,
-  },
-  liveCaps: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    fontFamily: 'PlusJakartaSans-Bold',
-  },
-  weekPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.surfaceHigh,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  shopper: {
-    backgroundColor: colors.surfaceLow,
-    borderRadius: 16,
-    padding: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  dadFace: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primaryFixed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cartBadge: {
-    position: 'absolute',
-    right: -4,
-    bottom: -4,
-    backgroundColor: colors.secondary,
-    borderRadius: 999,
-    padding: 2,
-  },
-  aisleBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    minHeight: 36,
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexShrink: 0,
-  },
-  aisleOn: { backgroundColor: colors.secondary },
-  segment: {
-    backgroundColor: colors.surfaceContainer,
-    borderRadius: 16,
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.sm,
     padding: 4,
-    flexDirection: 'row',
-    gap: 4,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceContainer,
   },
-  segmentOn: {
-    flex: 1,
-    minWidth: 0,
+  pill: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    bottom: 4,
+    borderRadius: radii.md,
     backgroundColor: colors.surfaceLowest,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    flexDirection: 'row',
+  },
+  tab: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    paddingHorizontal: 8,
   },
-  segmentOff: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  addCard: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radii.card,
-    padding: 8,
-    gap: 8,
-  },
-  addRow: { position: 'relative', justifyContent: 'center' },
-  addIcon: { position: 'absolute', left: 12, zIndex: 1 },
+  pager: {flex: 1, overflow: 'hidden'},
+  pages: {flexDirection: 'row', height: '100%'},
+  page: {height: '100%'},
+  content: {padding: spacing.margin, gap: spacing.md, paddingBottom: 32},
+  addRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   addInput: {
-    borderRadius: 16,
-    backgroundColor: colors.surfaceLow,
-    paddingLeft: 40,
-    paddingRight: 88,
-    paddingVertical: 12,
+    flex: 1,
+    minHeight: 52,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceLowest,
+    paddingHorizontal: 16,
     color: colors.onSurface,
-    fontFamily: 'PlusJakartaSans-Regular',
+    fontFamily: fonts.regular,
     fontSize: 16,
   },
-  addActions: { position: 'absolute', right: 8, flexDirection: 'row', gap: 4 },
-  miniBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipRow: { gap: 6, alignItems: 'center', paddingVertical: 2 },
-  quickChip: {
-    backgroundColor: colors.surfaceContainer,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  craving: {
-    backgroundColor: colors.surfaceHigh,
-    borderRadius: radii.card,
-    padding: spacing.md,
-    gap: 8,
-  },
-  pinned: {
-    backgroundColor: colors.surfaceContainer,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  craveGrid: { flexDirection: 'row', gap: 8, minWidth: 0 },
-  craveCard: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: 16,
-    padding: 10,
-    gap: 4,
-  },
-  craveFace: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.secondaryFixed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  craveBtn: {
-    marginTop: 4,
-    paddingVertical: 8,
-    minHeight: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  craveGreen: { backgroundColor: colors.secondaryContainer },
-  cravePrimary: { backgroundColor: colors.primary },
-  craveNeutral: { backgroundColor: colors.surfaceContainer },
-  restock: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radii.card,
-    padding: spacing.md,
-    gap: 8,
-  },
-  alertIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primaryFixed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  critical: {
-    backgroundColor: colors.primaryFixed,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  lowGrid: { flexDirection: 'row', gap: 8, minWidth: 0 },
-  lowCard: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: colors.surfaceLow,
-    borderRadius: 16,
-    padding: 10,
-    gap: 6,
-  },
-  barTrack: {
-    height: 8,
-    backgroundColor: colors.surfaceContainer,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  barFill: { height: 6, borderRadius: 999 },
-  listBtn: {
+  addBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.lg,
     backgroundColor: colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  waste: {
-    backgroundColor: colors.secondaryContainer,
-    borderRadius: 16,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    minWidth: 0,
-    flexWrap: 'wrap',
-  },
-  planBtn: {
-    backgroundColor: colors.surfaceLowest,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    minHeight: 36,
-    borderRadius: 999,
-    flexShrink: 0,
-    justifyContent: 'center',
-  },
-  catCard: {
-    backgroundColor: colors.surfaceLowest,
-    borderRadius: radii.card,
-    padding: spacing.md,
-    gap: 10,
-  },
-  catIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
-    backgroundColor: colors.secondaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catBadge: {
-    backgroundColor: colors.surfaceContainer,
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 999,
-    flexShrink: 1,
-    maxWidth: '48%',
-  },
+  addBtnOff: {opacity: 0.45},
+  pressed: {opacity: 0.88},
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 16,
+    gap: 12,
+    padding: 12,
+    borderRadius: radii.lg,
     backgroundColor: colors.surfaceLowest,
     minWidth: 0,
   },
-  itemOn: { backgroundColor: colors.surfaceLow },
+  itemOn: {backgroundColor: colors.surfaceLow},
+  itemBody: {flex: 1, minWidth: 0, gap: 2},
+  itemTitle: {fontFamily: fonts.bold},
+  strike: {textDecorationLine: 'line-through', opacity: 0.6},
   check: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.secondary },
-  checkOff: { backgroundColor: colors.surfaceContainer },
-  itemTitle: { fontFamily: 'PlusJakartaSans-Bold' },
-  strike: { textDecorationLine: 'line-through', opacity: 0.6 },
-  qty: {
-    backgroundColor: colors.surfaceContainer,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  tonight: {
-    backgroundColor: colors.errorContainer,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  kids: {
-    backgroundColor: colors.secondaryFixed,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  picker: {
-    width: 24,
-    height: 24,
+  checkOn: {backgroundColor: colors.secondary},
+  checkOff: {backgroundColor: colors.surfaceContainer},
+  edit: {
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    backgroundColor: colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tally: {
+  footer: {
+    paddingHorizontal: spacing.margin,
+    paddingTop: 12,
+    paddingBottom: 12,
+    backgroundColor: colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.outlineVariant,
+    ...shadows.tabBar,
+  },
+  scrim: {flex: 1},
+  scrimPress: {
+    flex: 1,
+    backgroundColor: 'rgba(18,28,42,0.45)',
+    justifyContent: 'center',
+    padding: spacing.margin,
+  },
+  sheet: {
     backgroundColor: colors.surfaceLowest,
     borderRadius: radii.card,
-    padding: spacing.md,
-    gap: 8,
+    padding: 20,
+    gap: 12,
   },
-  gauge: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  input: {
+    minHeight: 50,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.outlineVariant,
+    backgroundColor: colors.surfaceLowest,
+    paddingHorizontal: 16,
+    color: colors.onSurface,
+    fontFamily: fonts.regular,
+    fontSize: 16,
   },
-  gaugeText: { position: 'absolute', fontFamily: 'PlusJakartaSans-Bold' },
-  finish: {
-    minHeight: 52,
-    borderRadius: 16,
+  sheetActions: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8},
+  remove: {flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 4},
+  save: {
+    minHeight: 44,
+    paddingHorizontal: 20,
+    borderRadius: radii.md,
     backgroundColor: colors.primary,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
   },
-  finishOn: { backgroundColor: colors.secondary },
 });

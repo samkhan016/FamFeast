@@ -1,6 +1,5 @@
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {GroceryScreen} from '../../screens/GroceryScreen';
-import {PantryScreen} from '../../screens/PantryScreen';
 import {colors} from '../../theme/tokens';
 import type {GroceryStackParamList} from './types';
 
@@ -15,7 +14,6 @@ export function GroceryStack() {
         contentStyle: {backgroundColor: colors.surface},
       }}>
       <Stack.Screen name="GroceryHome" component={GroceryScreen} />
-      <Stack.Screen name="Pantry" component={PantryScreen} />
     </Stack.Navigator>
   );
 }

@@ -1,9 +1,12 @@
 import {
   addDays,
+  eachDayOfInterval,
+  endOfMonth,
   format,
   getISOWeek,
   isSameDay,
   parseISO,
+  startOfMonth,
   startOfWeek,
 } from 'date-fns';
 
@@ -59,4 +62,13 @@ export function addDaysISO(value: string, days: number): string {
 
 export function weekdayName(value: string): string {
   return format(parseISO(value), 'EEEE');
+}
+
+export function monthDates(anchor: string): string[] {
+  const date = parseISO(anchor);
+  return eachDayOfInterval({start: startOfMonth(date), end: endOfMonth(date)}).map(toISODate);
+}
+
+export function weekDatesISO(anchor: string): string[] {
+  return weekDates(parseISO(anchor)).map(toISODate);
 }

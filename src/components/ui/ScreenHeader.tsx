@@ -33,7 +33,7 @@ export function ScreenHeader({
   const insets = useSafeAreaInsets();
   const household = useAppStore(state => state.snapshot.household);
   const showToast = useAppStore(state => state.showToast);
-  const householdLabel = household.name ? `${household.name} 🏡` : '';
+  const householdLabel = household.name ?? '';
 
   const share = () => {
     Clipboard.setString(getShareLink());
@@ -163,7 +163,8 @@ const styles = StyleSheet.create({
   },
   brand: {
     lineHeight: 24,
-    flexShrink: 0,
+    flexShrink: 1,
+    minWidth: 0,
   },
   pill: {
     backgroundColor: colors.surfaceHigh,
